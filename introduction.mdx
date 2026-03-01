@@ -1,0 +1,94 @@
+---
+title: Introduction to vroomrs
+description: A high-performance Python profiling library written in Rust for processing and analyzing application profiles
+---
+
+# Introduction to vroomrs
+
+vroomrs is Sentry's high-performance profiling library - a Python extension module written in Rust that processes and derives data from your application profiles. Built for speed and efficiency, it provides powerful tools for analyzing performance data, extracting function metrics, and detecting performance issues.
+
+<CardGroup cols={3}>
+  <Card title="Installation" icon="download" href="/installation">
+    Get started by installing vroomrs via pip
+  </Card>
+  <Card title="Quickstart" icon="rocket" href="/quickstart">
+    Learn the basics with a quick example
+  </Card>
+  <Card title="API Reference" icon="code" href="/api/profile/overview">
+    Explore the complete API documentation
+  </Card>
+</CardGroup>
+
+## What is vroomrs?
+
+vroomrs is a Python extension module that combines Python's ease of use with Rust's performance. It processes profiling data to help you understand your application's performance characteristics, identify bottlenecks, and detect performance issues automatically.
+
+The library supports both single profiles and continuous profiling through profile chunks, making it suitable for various profiling scenarios from one-time analysis to production monitoring.
+
+## Key features
+
+<CardGroup cols={2}>
+  <Card title="Blazing fast performance" icon="bolt">
+    Written in Rust for maximum performance when processing large profile datasets
+  </Card>
+  <Card title="Function metrics extraction" icon="chart-line">
+    Extract detailed metrics for each function including self time, total time, and sample counts
+  </Card>
+  <Card title="Performance issue detection" icon="magnifying-glass">
+    Automatically detect performance issues like main thread blocking, slow I/O operations, and more
+  </Card>
+  <Card title="Compression support" icon="file-zipper">
+    Built-in LZ4 compression and decompression for efficient storage and transmission
+  </Card>
+  <Card title="Multi-platform support" icon="layer-group">
+    Process profiles from Android, iOS, Python, and other platforms
+  </Card>
+  <Card title="Rich metadata" icon="tags">
+    Access comprehensive metadata including device info, SDK details, and transaction data
+  </Card>
+</CardGroup>
+
+## Why use vroomrs?
+
+### Performance at scale
+
+Processing profiling data can be computationally expensive. vroomrs leverages Rust's performance to handle large profiles efficiently, making it suitable for production environments where you need to process thousands of profiles.
+
+### Automatic issue detection
+
+Rather than manually analyzing profiles, vroomrs can automatically detect common performance issues:
+
+- Frame drops caused by main thread blocking
+- Slow operations on the main thread (I/O, compression, database)
+- SwiftUI performance issues (view inflation, layout, rendering)
+- Machine learning model operations
+- Platform-specific performance patterns
+
+### Flexible analysis
+
+Whether you're analyzing a single profile or processing continuous profiling data, vroomrs provides the tools you need:
+
+- **Profile**: For transaction-based profiling with a defined start and end
+- **ProfileChunk**: For continuous profiling that captures ongoing application behavior
+
+### Easy integration
+
+As a Python extension module, vroomrs integrates seamlessly into your Python workflow while providing the performance benefits of native code.
+
+<Note>
+vroomrs is developed and maintained by Sentry as part of their profiling infrastructure.
+</Note>
+
+## Next steps
+
+<Steps>
+  <Step title="Install vroomrs">
+    Follow the [installation guide](/installation) to get vroomrs set up in your environment.
+  </Step>
+  <Step title="Try the quickstart">
+    Work through the [quickstart guide](/quickstart) to learn the basics.
+  </Step>
+  <Step title="Explore the API">
+    Check out the [API reference](/api/profile/overview) to see all available functionality.
+  </Step>
+</Steps>

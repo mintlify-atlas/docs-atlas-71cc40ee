@@ -1,0 +1,247 @@
+---
+title: 'Call tree extraction'
+description: 'Extracting and working with call tree data from ProfileChunk'
+---
+
+Call trees represent the hierarchical structure of function calls in your application during profiling. The ProfileChunk class provides the `extract_functions_metrics()` method to extract and analyze call tree data.
+
+## What are call trees?
+
+A call tree is a tree structure that shows:
+- Which functions called which other functions
+- How much time was spent in each function
+- The depth of each function in the call stack
+- The relationship between parent and child functions
+
+Call trees help you understand:
+- The execution path through your code
+- Where time is being spent (hot paths)
+- Function call hierarchies and dependencies
+- Performance bottlenecks at different call depths
+
+## Extracting call tree data
+
+Use the `extract_functions_metrics()` method to extract function-level metrics from the call tree:
+
+```python
+import vroomrs
+
+# Load profile chunk
+with open("chunk.lz4", "rb") as f:
+    chunk = vroomrs.decompress_profile_chunk(f.read())
+
+chunk.normalize()
+
+# Extract call tree metrics
+metrics = chunk.extract_functions_metrics(
+    min_depth=1,
+    filter_system_frames=True,
+    max_unique_functions=20
+)
+```
+
+## Method parameters
+
+<ParamField path="min_depth" type="int" required>
+  Minimum depth in the call tree. Functions at depth less than this value are ignored.
+  - `0`: Include all functions including root
+  - `1`: Ignore root frames
+  - `2`: Ignore root and first-level frames
+</ParamField>
+
+<ParamField path="filter_system_frames" type="bool" required>
+  Whether to filter out system and standard library frames. Set to `True` to focus on application code only.
+</ParamField>
+
+<ParamField path="max_unique_functions" type="int" optional>
+  Maximum number of functions to return. Returns the slowest N functions by self-time. If `None`, returns all functions.
+</ParamField>
+
+<ParamField path="filter_non_leaf_functions" type="bool" default="True">
+  Whether to filter out non-leaf functions (functions with zero self-time). Set to `False` to include all functions in the call tree.
+</ParamField>
+
+<ParamField path="generate_stack_fingerprints" type="bool" default="False">
+  Whether to generate stack fingerprints for each function. Enables `get_stack_fingerprint()` and `get_parent_fingerprint()` methods.
+</ParamField>
+
+<ResponseField name="return" type="list[CallTreeFunction]">
+  List of CallTreeFunction objects sorted by self-time in descending order.
+</ResponseField>
+
+## Working with CallTreeFunction results
+
+Each CallTreeFunction object provides detailed metrics about a function in the call tree:
+
+### Basic function information
+
+```python
+for metric in metrics:
+    # Function identification
+    function_name = metric.get_function()
+    package_name = metric.get_package()
+    is_app_code = metric.get_in_app()
+    
+    print(f"Function: {package_name}.{function_name}")
+    print(f"Application code: {is_app_code}")
+```
+
+### Performance metrics
+
+```python
+for metric in metrics:
+    # Time measurements
+    total_self_time = metric.get_sum_self_time_ns()
+    self_times = metric.get_self_times_ns()
+    total_times = metric.get_total_times_ns()
+    max_duration = metric.get_max_duration()
+    
+    # Sample information
+    sample_count = metric.get_sample_count()
+    thread_id = metric.get_thread_id()
+    
+    print(f"Total self-time: {total_self_time / 1_000_000:.2f}ms")
+    print(f"Samples: {sample_count}")
+    print(f"Thread: {thread_id}")
+```
+
+### Call tree structure
+
+```python
+metrics = chunk.extract_functions_metrics(
+    min_depth=0,
+    filter_system_frames=False,
+    filter_non_leaf_functions=False
+)
+
+for metric in metrics:
+    depth = metric.get_depth()
+    indent = "  " * (depth or 0)
+    print(f"{indent}{metric.get_function()} at depth {depth}")
+```
+
+### Using stack fingerprints
+
+Stack fingerprints allow you to identify unique call paths:
+
+```python
+metrics = chunk.extract_functions_metrics(
+    min_depth=1,
+    filter_system_frames=True,
+    generate_stack_fingerprints=True
+)
+
+for metric in metrics:
+    # Function fingerprint (hash of function identity)
+    func_fp = metric.get_fingerprint()
+    
+    # Stack fingerprint (hash of entire call stack up to this function)
+    stack_fp = metric.get_stack_fingerprint()
+    
+    # Parent function fingerprint
+    parent_fp = metric.get_parent_fingerprint()
+    
+    print(f"Function: {metric.get_function()}")
+    print(f"  Function FP: {func_fp}")
+    print(f"  Stack FP: {stack_fp}")
+    print(f"  Parent FP: {parent_fp}")
+```
+
+Stack fingerprints are useful for:
+- Identifying unique call paths through your application
+- Grouping similar performance issues
+- Tracking how the same function behaves in different contexts
+
+## Example: Finding hot paths
+
+Identify the slowest execution paths in your application:
+
+```python
+import vroomrs
+
+with open("chunk.lz4", "rb") as f:
+    chunk = vroomrs.decompress_profile_chunk(f.read())
+
+chunk.normalize()
+
+# Get top 10 slowest functions
+metrics = chunk.extract_functions_metrics(
+    min_depth=2,  # Skip root frames
+    filter_system_frames=True,  # Focus on application code
+    max_unique_functions=10,
+    filter_non_leaf_functions=True  # Only leaf functions with self-time
+)
+
+print("Top 10 slowest functions:")
+for i, metric in enumerate(metrics, 1):
+    self_time_ms = metric.get_sum_self_time_ns() / 1_000_000
+    samples = metric.get_sample_count()
+    
+    print(f"{i}. {metric.get_function()}")
+    print(f"   Self-time: {self_time_ms:.2f}ms ({samples} samples)")
+    print(f"   Package: {metric.get_package()}")
+    print()
+```
+
+## Example: Analyzing call depth
+
+Understand how deep function calls go:
+
+```python
+metrics = chunk.extract_functions_metrics(
+    min_depth=0,
+    filter_system_frames=False,
+    filter_non_leaf_functions=False
+)
+
+# Group by depth
+by_depth = {}
+for metric in metrics:
+    depth = metric.get_depth() or 0
+    if depth not in by_depth:
+        by_depth[depth] = []
+    by_depth[depth].append(metric)
+
+print("Call tree depth analysis:")
+for depth in sorted(by_depth.keys()):
+    funcs = by_depth[depth]
+    total_time = sum(f.get_sum_self_time_ns() for f in funcs)
+    print(f"Depth {depth}: {len(funcs)} functions, {total_time / 1_000_000:.2f}ms")
+```
+
+## Example: Thread analysis
+
+Analyze performance by thread:
+
+```python
+metrics = chunk.extract_functions_metrics(
+    min_depth=1,
+    filter_system_frames=True
+)
+
+# Group by thread
+by_thread = {}
+for metric in metrics:
+    thread_id = metric.get_thread_id()
+    if thread_id not in by_thread:
+        by_thread[thread_id] = []
+    by_thread[thread_id].append(metric)
+
+print("Performance by thread:")
+for thread_id, thread_metrics in by_thread.items():
+    total_time = sum(m.get_sum_self_time_ns() for m in thread_metrics)
+    print(f"Thread {thread_id}:")
+    print(f"  Functions: {len(thread_metrics)}")
+    print(f"  Total time: {total_time / 1_000_000:.2f}ms")
+    
+    # Top function in this thread
+    top_func = max(thread_metrics, key=lambda m: m.get_sum_self_time_ns())
+    print(f"  Hottest: {top_func.get_function()}")
+    print()
+```
+
+## See also
+
+- [CallTreeFunction class](/api/call-tree-function) - Detailed reference for function metrics
+- [ProfileChunk methods](/api/profile-chunk/methods) - All ProfileChunk methods
+- [Profile class](/api/profile/overview) - Transaction-based profiling

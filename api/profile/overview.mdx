@@ -1,0 +1,86 @@
+---
+title: Profile class
+description: The Profile class represents a performance profile collected by Sentry's profiling SDK
+---
+
+The `Profile` class is the core data structure in vroomrs for working with performance profiles. It provides methods to analyze, normalize, and extract insights from profiling data collected across different platforms including Android, iOS, Python, and more.
+
+## Creating profile instances
+
+You can create a `Profile` instance from either JSON data or compressed LZ4 data:
+
+### From JSON string
+
+```python
+import vroomrs
+
+# Create a profile from JSON string
+profile = vroomrs.profile_from_json_str(json_string)
+
+# Optionally specify the platform for more efficient deserialization
+profile = vroomrs.profile_from_json_str(json_string, platform="android")
+```
+
+<ParamField path="profile" type="str" required>
+  A profile serialized as a JSON string
+</ParamField>
+
+<ParamField path="platform" type="str">
+  Optional platform identifier (e.g., "android", "cocoa", "python"). When provided, deserialization is more efficient
+</ParamField>
+
+### From compressed data
+
+```python
+import vroomrs
+
+# Decompress and create a profile from LZ4 compressed data
+with open("profile_compressed.lz4", "rb") as binary_file:
+    profile = vroomrs.decompress_profile(binary_file.read())
+```
+
+<ParamField path="profile" type="bytes" required>
+  A LZ4 encoded profile as bytes
+</ParamField>
+
+## Main use cases
+
+The Profile class supports several key workflows:
+
+- **Normalization**: Apply platform-specific normalization steps to standardize profile data
+- **Function metrics extraction**: Analyze call trees to identify the slowest functions and bottlenecks
+- **Performance issue detection**: Automatically detect common performance problems like frame drops, main thread blocking, and slow operations
+- **Metadata access**: Retrieve project, organization, environment, and device information
+- **Compression**: Serialize and compress profiles for efficient storage and transmission
+
+## Quick example
+
+```python
+import vroomrs
+
+# Load a profile from JSON
+profile = vroomrs.profile_from_json_str(json_data, platform="android")
+
+# Normalize the profile
+profile.normalize()
+
+# Extract the top 10 slowest functions
+metrics = profile.extract_functions_metrics(
+    min_depth=1,
+    filter_system_frames=True,
+    max_unique_functions=10
+)
+
+for func in metrics:
+    print(f"{func.get_function()}: {func.get_sum_self_time_ns()}ns")
+
+# Find performance issues
+occurrences = profile.find_occurrences()
+for issue in occurrences.occurrences:
+    print(f"{issue.get_issue_title()}: {issue.get_subtitle()}")
+
+# Compress for storage
+compressed = profile.compress()
+with open("profile.lz4", "wb") as f:
+    f.write(compressed)
+```

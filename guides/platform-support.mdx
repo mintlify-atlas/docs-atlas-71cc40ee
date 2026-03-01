@@ -1,0 +1,469 @@
+---
+title: Platform support
+description: Platform-specific features and considerations in vroomrs
+---
+
+vroomrs supports multiple profiling platforms, each with specific features, normalization behaviors, and performance issue detection capabilities.
+
+## Supported platforms
+
+vroomrs supports profiles from the following platforms:
+
+<Tabs>
+  <Tab title="Mobile">
+    - **iOS/Cocoa** (`cocoa`) - Native iOS, macOS, tvOS, watchOS apps
+    - **Android** (`android`) - Native Android apps with ART runtime
+  </Tab>
+  
+  <Tab title="Backend">
+    - **Python** (`python`) - Python applications
+    - **Node.js** (`node`) - Node.js applications
+  </Tab>
+  
+  <Tab title="Other">
+    - **JavaScript** (`javascript`) - Browser JavaScript
+    - **Java** (`java`) - JVM applications
+  </Tab>
+</Tabs>
+
+## Specifying the platform
+
+Always specify the platform when loading profiles for best performance:
+
+```python
+import vroomrs
+
+# iOS profile
+ios_profile = vroomrs.profile_from_json_str(json_data, platform="cocoa")
+
+# Android profile
+android_profile = vroomrs.profile_from_json_str(json_data, platform="android")
+
+# Python profile
+python_profile = vroomrs.profile_from_json_str(json_data, platform="python")
+
+# Node.js profile
+node_profile = vroomrs.profile_from_json_str(json_data, platform="node")
+```
+
+<Info>
+  If no platform is specified, vroomrs attempts to auto-detect the format:
+  - Profiles **without** a `version` field → Android
+  - Profiles **with** a `version` field → Sample-based (iOS, Python, Node.js, etc.)
+</Info>
+
+## Platform-specific normalization
+
+Each platform has different normalization behavior:
+
+### Android normalization
+
+```python
+android_profile = vroomrs.profile_from_json_str(json_data, platform="android")
+android_profile.normalize()
+```
+
+**What happens:**
+- Package names are stripped from full method signatures
+- `com.example.MyClass.doSomething()` → `MyClass.doSomething()`
+- Stack traces are normalized for cleaner display in occurrences
+- Platform changed from `android` to `java` for occurrence reporting
+
+<Note>
+  Android uses instrumented profiling (method entry/exit events) rather than sampling, so `sample_count` is calculated from duration: `duration_ns / (10 * 1_000_000)`
+</Note>
+
+### iOS/Cocoa normalization
+
+```python
+cocoa_profile = vroomrs.profile_from_json_str(json_data, platform="cocoa")
+cocoa_profile.normalize()
+```
+
+**What happens:**
+- Symbolication status is validated
+- Frames without symbolication may be filtered from metrics
+- SwiftUI internal frames are preserved for performance detection
+
+### Python/Node.js normalization
+
+```python
+python_profile = vroomrs.profile_from_json_str(json_data, platform="python")
+python_profile.normalize()
+```
+
+**What happens:**
+- Platform-agnostic normalization
+- Standard library detection via `in_app` field
+- No special transformations
+
+## Platform-specific features
+
+### Android
+
+<Tabs>
+  <Tab title="Profiling method">
+    - **Type**: Instrumented (method tracing)
+    - **Clock**: Wall-clock, CPU, or dual mode
+    - **Data**: Method entry/exit events with precise timestamps
+    - **Sample count**: Calculated from duration (10ms per sample)
+  </Tab>
+  
+  <Tab title="Metrics extraction">
+    ```python
+    metrics = profile.extract_functions_metrics(
+        min_depth=1,
+        filter_system_frames=True
+    )
+    
+    # sample_count is derived, not actual samples
+    for func in metrics:
+        # Sample count = duration / 10ms
+        samples = func.get_sample_count()
+    ```
+  </Tab>
+  
+  <Tab title="System frame detection">
+    Android system packages are automatically marked as `in_app=False`:
+    - `android.*`
+    - `androidx.*`
+    - `com.google.android.*`
+    - `java.*`, `javax.*`
+    - `kotlin.*`, `kotlinx.*`
+    - And more...
+  </Tab>
+  
+  <Tab title="Performance issues">
+    Detects:
+    - File I/O on main thread
+    - Image decoding on main thread
+    - JSON decoding on main thread
+    - Regex operations on main thread
+  </Tab>
+</Tabs>
+
+### iOS/Cocoa
+
+<Tabs>
+  <Tab title="Profiling method">
+    - **Type**: Sampling
+    - **Rate**: Typically 99-101 Hz
+    - **Data**: Periodic stack samples
+    - **Sample count**: Actual number of samples
+  </Tab>
+  
+  <Tab title="Metrics extraction">
+    ```python
+    metrics = profile.extract_functions_metrics(
+        min_depth=1,
+        filter_system_frames=True
+    )
+    
+    # Actual sample counts from profiler
+    for func in metrics:
+        samples = func.get_sample_count()
+        # Higher sample count = more time spent
+    ```
+  </Tab>
+  
+  <Tab title="Symbolication">
+    Frames must be symbolicated to be included in metrics:
+    ```python
+    # Only symbolicated frames are aggregated
+    # Check frame.data.symbolicator_status == "symbolicated"
+    ```
+    
+    React Native frames have special handling:
+    ```python
+    # React Native requires js_symbolicated=True
+    # Regular JavaScript frames are included by default
+    ```
+  </Tab>
+  
+  <Tab title="Performance issues">
+    Most comprehensive detection:
+    - File/Network I/O on main thread
+    - JSON/Image decoding on main thread
+    - CoreData operations on main thread
+    - SwiftUI performance issues (layout, rendering, updates)
+    - ML model loading and inference
+    - Regular expressions
+    - Thread waiting/blocking
+    - Frame drops (>16ms main thread blocks)
+    
+    Minimum thresholds:
+    - Duration: 16ms (one frame at 60fps)
+    - Samples: 4 samples
+  </Tab>
+</Tabs>
+
+### Python
+
+<Tabs>
+  <Tab title="Profiling method">
+    - **Type**: Sampling
+    - **Data**: Stack samples with frame metadata
+    - **Standard library**: Detected via `in_app` field
+  </Tab>
+  
+  <Tab title="System frames">
+    Python standard library frames:
+    ```python
+    # Frames from Python stdlib are marked in_app=False
+    # User code is marked in_app=True
+    ```
+  </Tab>
+  
+  <Tab title="Performance issues">
+    Limited platform-specific detection (relies on function names)
+  </Tab>
+</Tabs>
+
+### Node.js
+
+<Tabs>
+  <Tab title="Profiling method">
+    - **Type**: Sampling
+    - **Data**: V8 profiler samples
+    - **Module detection**: Built-in modules prefixed with `node:`
+  </Tab>
+  
+  <Tab title="System frames">
+    ```python
+    # Built-in modules: node:fs, node:http, etc.
+    # User modules: Custom package names
+    ```
+  </Tab>
+  
+  <Tab title="Performance issues">
+    Detects:
+    - Synchronous file operations (fs.*Sync methods)
+    - Source context overhead (Sentry-specific)
+    
+    Thresholds:
+    - File I/O: Detected on first sample
+    - Source context: 100ms minimum
+  </Tab>
+</Tabs>
+
+## Platform detection differences
+
+### Frame aggregation
+
+Different platforms have different rules for which frames are aggregated:
+
+```python
+# Android/Java: Package must contain '.' to avoid obfuscated code
+android_metrics = android_profile.extract_functions_metrics(
+    min_depth=1,
+    filter_system_frames=True
+)
+# Filters out frames like "a.b()" (likely obfuscated)
+
+# iOS/Cocoa: Must be symbolicated
+cocoa_metrics = cocoa_profile.extract_functions_metrics(
+    min_depth=1,
+    filter_system_frames=True
+)
+# Filters out unsymbolicated frames
+
+# Python/Node: All frames aggregated if they have names
+python_metrics = python_profile.extract_functions_metrics(
+    min_depth=1,
+    filter_system_frames=True
+)
+# No special filtering beyond in_app
+```
+
+### Deobfuscation (Android/Java)
+
+```python
+# Android frames may have deobfuscation status
+for func in metrics:
+    # frame.data.deobfuscation_status can be:
+    # - "deobfuscated": Successfully deobfuscated
+    # - "partial": Only class name deobfuscated (filtered out)
+    # - "missing": Not found in mapping (system library, included)
+    # - None: No mapping provided (included)
+    pass
+```
+
+<Warning>
+  Partially deobfuscated frames (only class name available) are **excluded** from metrics as they make grouping ineffective.
+</Warning>
+
+## Platform-specific metadata
+
+### Android-specific
+
+```python
+metadata = android_profile.get_metadata()
+
+# Android API level
+if metadata.android_api_level:
+    print(f"API Level: {metadata.android_api_level}")
+
+# App version
+if metadata.version_code:
+    print(f"Version: {metadata.version_name} (code: {metadata.version_code})")
+```
+
+### iOS-specific
+
+```python
+metadata = cocoa_profile.get_metadata()
+
+# OS build number
+if metadata.device_os_build_number:
+    print(f"Build: {metadata.device_os_build_number}")
+
+# Device details
+print(f"Device: {metadata.device_manufacturer} {metadata.device_model}")
+```
+
+## Choosing the right platform parameter
+
+<Steps>
+  <Step title="Check your SDK">
+    Identify which Sentry SDK collected the profile:
+    ```python
+    sdk_name = profile.sdk_name()  # "sentry.cocoa", "sentry.python", etc.
+    ```
+  </Step>
+  
+  <Step title="Map to platform">
+    - `sentry.cocoa` → `platform="cocoa"`
+    - `sentry.java.android` → `platform="android"`
+    - `sentry.python` → `platform="python"`
+    - `sentry.javascript.node` → `platform="node"`
+  </Step>
+  
+  <Step title="Use in loading">
+    ```python
+    profile = vroomrs.profile_from_json_str(json_data, platform="cocoa")
+    ```
+  </Step>
+</Steps>
+
+## Performance considerations by platform
+
+### Android
+
+- **Largest profiles**: Instrumented tracing generates more data
+- **Slower parsing**: Method entry/exit events require more processing
+- **Call tree generation**: More complex due to event reconstruction
+
+**Optimization tips:**
+```python
+# Always use platform hint
+profile = vroomrs.profile_from_json_str(json_data, platform="android")
+
+# Limit results for large profiles
+metrics = profile.extract_functions_metrics(
+    min_depth=2,  # Skip more root frames
+    filter_system_frames=True,
+    max_unique_functions=50  # Limit results
+)
+```
+
+### iOS/Cocoa
+
+- **Medium profiles**: Sampling-based
+- **Fast parsing**: Simpler data structure
+- **Symbolication overhead**: Some frames may need validation
+
+### Python/Node.js
+
+- **Smaller profiles**: Typically shorter duration
+- **Fast parsing**: Simple sample format
+- **Minimal overhead**: Straightforward processing
+
+## Platform-specific best practices
+
+<Tabs>
+  <Tab title="Android">
+    ✅ **Do:**
+    - Always specify `platform="android"`
+    - Normalize before analysis
+    - Use `min_depth=2` to skip common Android framework roots
+    - Filter system frames for app performance
+    
+    ❌ **Don't:**
+    - Rely on auto-detection (slower)
+    - Compare sample counts across platforms
+    - Include partially deobfuscated frames
+  </Tab>
+  
+  <Tab title="iOS/Cocoa">
+    ✅ **Do:**
+    - Specify `platform="cocoa"`
+    - Check symbolication status for critical frames
+    - Use 16ms threshold for frame-time analysis
+    - Monitor SwiftUI-specific issues
+    
+    ❌ **Don't:**
+    - Aggregate unsymbolicated frames
+    - Ignore React Native symbolication status
+    - Filter out "main" function (it's in deny list)
+  </Tab>
+  
+  <Tab title="Python/Node.js">
+    ✅ **Do:**
+    - Specify platform explicitly
+    - Use `filter_system_frames=True` for app code focus
+    - Check for sync file operations (Node.js)
+    
+    ❌ **Don't:**
+    - Expect platform-specific issue detection
+    - Assume consistent sample rates across profiles
+  </Tab>
+</Tabs>
+
+## Cross-platform analysis
+
+When comparing metrics across platforms:
+
+```python
+def analyze_profile(json_data, platform):
+    profile = vroomrs.profile_from_json_str(json_data, platform=platform)
+    profile.normalize()
+    
+    metrics = profile.extract_functions_metrics(
+        min_depth=1,
+        filter_system_frames=True,
+        max_unique_functions=50
+    )
+    
+    # Platform-agnostic analysis
+    total_app_time = sum(
+        m.get_sum_self_time_ns()
+        for m in metrics
+        if m.get_in_app()
+    )
+    
+    # Use duration percentage for comparison
+    profile_duration = profile.duration_ns()
+    app_percentage = (total_app_time / profile_duration) * 100
+    
+    return {
+        'platform': platform,
+        'duration_ms': profile_duration / 1_000_000,
+        'app_percentage': app_percentage,
+        'function_count': len(metrics)
+    }
+
+# Compare across platforms
+android_stats = analyze_profile(android_json, "android")
+ios_stats = analyze_profile(ios_json, "cocoa")
+node_stats = analyze_profile(node_json, "node")
+
+print("Cross-platform comparison:")
+for stats in [android_stats, ios_stats, node_stats]:
+    print(f"{stats['platform']}: {stats['app_percentage']:.1f}% app code")
+```
+
+## Next steps
+
+- [Working with profiles](/guides/working-with-profiles) - Basic profile operations
+- [Extracting metrics](/guides/extracting-metrics) - Detailed metrics analysis
+- [Performance detection](/guides/performance-detection) - Platform-specific issue detection

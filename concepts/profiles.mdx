@@ -1,0 +1,225 @@
+---
+title: Profile vs ProfileChunk
+description: Understanding the two core data structures in vroomrs and when to use each
+---
+
+## Overview
+
+vroomrs provides two fundamental classes for working with profiling data: `Profile` and `ProfileChunk`. Understanding the difference between these two structures is essential for effectively using the library.
+
+## Profile
+
+The `Profile` class represents a **complete profiling session** tied to a single transaction. It contains comprehensive information about code execution during a specific time window.
+
+### Key characteristics
+
+- **Transaction-bound**: Each Profile is associated with a single transaction
+- **Complete execution snapshot**: Contains the full call tree and all samples for the profiling session
+- **Rich metadata**: Includes device information, SDK details, and environment data
+- **Unique identifier**: Has a profile ID that can be set or retrieved
+
+### Data structure
+
+A Profile internally uses the `ProfileInterface` trait and can represent different platform-specific formats:
+
+```rust
+pub struct Profile {
+    pub profile: Box<dyn ProfileInterface + Send + Sync>,
+}
+```
+
+The actual implementation is determined by the platform:
+- **Android profiles**: Uses `AndroidProfile` (no version field)
+- **Sample profiles**: Uses `SampleProfile` (has version field) for iOS, Python, and other platforms
+
+### When to use Profile
+
+Use `Profile` when:
+- You need to analyze a complete profiling session
+- You want to extract function metrics across the entire transaction
+- You need to detect performance issues (occurrences) in a single execution
+- You're working with a single, self-contained profiling payload
+
+### Usage example
+
+```python
+import vroomrs
+
+# Load from JSON
+profile = vroomrs.profile_from_json_str(json_string, platform="python")
+
+# Access metadata
+print(f"Platform: {profile.get_platform()}")
+print(f"Duration: {profile.duration_ns()}ns")
+print(f"Transaction: {profile.get_transaction().name}")
+
+# Normalize the profile
+profile.normalize()
+
+# Extract metrics
+metrics = profile.extract_functions_metrics(
+    min_depth=1,
+    filter_system_frames=True,
+    max_unique_functions=100
+)
+
+# Find performance issues
+occurrences = profile.find_occurrences()
+```
+
+## ProfileChunk
+
+The `ProfileChunk` class represents a **segment of continuous profiling data**. Unlike Profile, which is transaction-bound, ProfileChunk is designed for streaming and long-running profiling scenarios.
+
+### Key characteristics
+
+- **Continuous profiling**: Designed for ongoing profiling without transaction boundaries
+- **Chunk-based**: Part of a larger profiling session, identified by both chunk ID and profiler ID
+- **Time-bounded**: Has explicit start and end timestamps
+- **Lighter weight**: Optimized for streaming and aggregation scenarios
+
+### Data structure
+
+```rust
+pub struct ProfileChunk {
+    pub profile: Box<dyn ChunkInterface + Send + Sync>,
+}
+```
+
+Like Profile, ProfileChunk supports multiple platforms:
+- **Android chunks**: Uses `AndroidChunk`
+- **Sample chunks**: Uses `SampleChunk` for iOS, Python, and other platforms
+
+### When to use ProfileChunk
+
+Use `ProfileChunk` when:
+- You're implementing continuous profiling
+- You need to process profiling data in segments
+- You're working with streaming profiling pipelines
+- You need to aggregate data from multiple time windows
+
+### Usage example
+
+```python
+import vroomrs
+
+# Load from JSON
+chunk = vroomrs.profile_chunk_from_json_str(json_string, platform="cocoa")
+
+# Access chunk-specific metadata
+print(f"Chunk ID: {chunk.get_chunk_id()}")
+print(f"Profiler ID: {chunk.get_profiler_id()}")
+print(f"Duration: {chunk.duration_ms()}ms")
+print(f"Start: {chunk.start_timestamp()}")
+print(f"End: {chunk.end_timestamp()}")
+
+# Normalize the chunk
+chunk.normalize()
+
+# Extract metrics from this chunk
+metrics = chunk.extract_functions_metrics(
+    min_depth=0,
+    filter_system_frames=False,
+    max_unique_functions=50
+)
+```
+
+## Platform support
+
+Both `Profile` and `ProfileChunk` support multiple platforms through automatic detection or explicit specification:
+
+### Supported platforms
+
+- **Android**: Mobile profiling for Android applications
+- **iOS (Cocoa)**: Mobile profiling for iOS applications
+- **Python**: Server-side and application profiling
+- **Other**: Any platform using the sample-based format
+
+### Platform detection
+
+The library can automatically detect the platform by examining the JSON structure:
+
+```python
+# Automatic detection
+profile = vroomrs.profile_from_json_str(json_string)
+
+# Explicit platform (more efficient)
+profile = vroomrs.profile_from_json_str(json_string, platform="android")
+```
+
+<Info>
+When the platform is known, always pass it explicitly. This bypasses version field detection and improves deserialization performance.
+</Info>
+
+The detection logic (from `src/profile.rs:25-40`):
+
+```rust
+let min_prof: MinimumProfile = serde_json::from_slice(profile)?;
+match min_prof.version {
+    None => {
+        // Android profile (no version field)
+        let android: AndroidProfile = serde_json::from_slice(profile)?;
+        Ok(Profile { profile: Box::new(android) })
+    }
+    Some(_) => {
+        // Sample profile (has version field)
+        let sample: SampleProfile = serde_json::from_slice(profile)?;
+        Ok(Profile { profile: Box::new(sample) })
+    }
+}
+```
+
+## Key differences
+
+| Feature | Profile | ProfileChunk |
+|---------|---------|-------------|
+| **Scope** | Single transaction | Continuous segment |
+| **Identifier** | `profile_id` | `chunk_id` + `profiler_id` |
+| **Timing** | `timestamp` (end time) | `start_timestamp` + `end_timestamp` |
+| **Duration unit** | Nanoseconds (`duration_ns()`) | Milliseconds (`duration_ms()`) |
+| **Use case** | Transaction analysis | Continuous profiling |
+| **Occurrences** | Supported (`find_occurrences()`) | Not supported |
+| **Call trees** | Uses `CallTreesU64` (thread ID as u64) | Uses `CallTreesStr` (thread ID as string) |
+
+## Common operations
+
+Both classes share many common operations:
+
+### Metadata access
+
+```python
+# Both support
+platform = obj.get_platform()
+project_id = obj.get_project_id()
+organization_id = obj.get_organization_id()
+release = obj.get_release()
+environment = obj.get_environment()
+```
+
+### Normalization
+
+```python
+# Both support normalization
+obj.normalize()
+```
+
+### Function metrics extraction
+
+```python
+# Both support extracting function metrics
+metrics = obj.extract_functions_metrics(
+    min_depth=1,
+    filter_system_frames=True
+)
+```
+
+### Compression
+
+```python
+# Both support LZ4 compression
+compressed = obj.compress()
+```
+
+<Tip>
+For most use cases, if you're analyzing transaction-based profiling data, use `Profile`. If you're building a continuous profiling system, use `ProfileChunk`.
+</Tip>

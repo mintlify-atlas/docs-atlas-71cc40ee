@@ -1,80 +1,183 @@
 ---
-title: "Quickstart"
-description: "Start building awesome documentation in minutes"
+title: Quickstart
+description: Get up and running with vroomrs in minutes
 ---
 
-## Get started in three steps
+## Quick example
 
-Get your documentation site running locally and make your first customization.
+This guide will walk you through the basics of using vroomrs to process profiling data, extract function metrics, and detect performance issues.
 
-### Step 1: Set up your local environment
+<Steps>
+  <Step title="Import vroomrs">
+    Start by importing the vroomrs module:
 
-<AccordionGroup>
-  <Accordion icon="copy" title="Clone your docs locally">
-    During the onboarding process, you created a GitHub repository with your docs content if you didn't already have one. You can find a link to this repository in your [dashboard](https://dashboard.mintlify.com).
-    
-    To clone the repository locally so that you can make and preview changes to your docs, follow the [Cloning a repository](https://docs.github.com/en/repositories/creating-and-managing-repositories/cloning-a-repository) guide in the GitHub docs.
-  </Accordion>
-  <Accordion icon="rectangle-terminal" title="Start the preview server">
-    1. Install the Mintlify CLI: `npm i -g mint`
-    2. Navigate to your docs directory and run: `mint dev`
-    3. Open `http://localhost:3000` to see your docs live!
-    
-    <Tip>Your preview updates automatically as you edit files.</Tip>
-  </Accordion>
-</AccordionGroup>
+    ```python
+    import vroomrs
+    ```
+  </Step>
 
-### Step 2: Deploy your changes
+  <Step title="Load a profile">
+    Load a profile from a JSON string:
 
-<AccordionGroup>
-  <Accordion icon="github" title="Install our GitHub app">
-    Install the Mintlify GitHub app from your [dashboard](https://dashboard.mintlify.com/settings/organization/github-app).
-    
-    Our GitHub app automatically deploys your changes to your docs site, so you don't need to manage deployments yourself.
-</Accordion>
-<Accordion icon="palette" title="Update your site name and colors">
-    For a first change, let's update the name and colors of your docs site.
+    ```python
+    # Load a profile from JSON
+    with open("profile.json", "r") as f:
+        profile_json = f.read()
 
-    1. Open `docs.json` in your editor.
-    2. Change the `"name"` field to your project name.
-    3. Update the `"colors"` to match your brand.
-    4. Save and see your changes instantly at `http://localhost:3000`.
+    profile = vroomrs.profile_from_json_str(profile_json)
+    ```
 
-    <Tip>Try changing the primary color to see an immediate difference!</Tip>
-  </Accordion>
-</AccordionGroup>
+    <Tip>
+    If you know the platform in advance, pass it for better performance:
+    ```python
+    profile = vroomrs.profile_from_json_str(profile_json, platform="android")
+    ```
+    </Tip>
+  </Step>
 
-### Step 3: Go live
+  <Step title="Access metadata">
+    Extract metadata from the profile:
 
-<Accordion icon="rocket" title="Publish your docs">
-  1. Commit and push your changes.
-  2. Your docs will update and be live in moments!
-</Accordion>
+    ```python
+    # Get basic information
+    profile_id = profile.get_profile_id()
+    platform = profile.get_platform()
+    duration = profile.duration_ns()
+
+    print(f"Profile ID: {profile_id}")
+    print(f"Platform: {platform}")
+    print(f"Duration: {duration / 1_000_000}ms")
+    ```
+  </Step>
+
+  <Step title="Extract function metrics">
+    Analyze function performance:
+
+    ```python
+    # Extract function metrics
+    functions = profile.extract_functions_metrics(
+        min_depth=1,
+        filter_system_frames=True,
+        max_unique_functions=10
+    )
+
+    # Find the slowest functions
+    for func in functions:
+        print(f"{func.get_function()}: {func.get_sum_self_time_ns() / 1_000_000}ms")
+    ```
+  </Step>
+
+  <Step title="Detect performance issues">
+    Automatically find performance problems:
+
+    ```python
+    # Find performance issues
+    occurrences = profile.find_occurrences()
+
+    for occurrence in occurrences.get_occurrences():
+        print(f"{occurrence.get_type()}: {occurrence.get_issue_title()}")
+        print(f"  Culprit: {occurrence.get_culprit()}")
+        print(f"  Duration: {occurrence.get_duration_ns() / 1_000_000}ms")
+    ```
+  </Step>
+</Steps>
+
+## Working with compression
+
+vroomrs supports LZ4 compression for efficient storage:
+
+```python
+# Compress a profile
+compressed = profile.compress()
+
+# Save to file
+with open("profile.lz4", "wb") as f:
+    f.write(compressed)
+
+# Load compressed profile later
+with open("profile.lz4", "rb") as f:
+    compressed_data = f.read()
+
+profile = vroomrs.decompress_profile(compressed_data)
+```
+
+## Using ProfileChunk
+
+For continuous profiling, use `ProfileChunk`:
+
+```python
+# Load a profile chunk
+chunk = vroomrs.profile_chunk_from_json_str(chunk_json, platform="android")
+
+# Access chunk-specific metadata
+chunk_id = chunk.get_chunk_id()
+profiler_id = chunk.get_profiler_id()
+duration_ms = chunk.duration_ms()
+
+print(f"Chunk ID: {chunk_id}")
+print(f"Duration: {duration_ms}ms")
+
+# Extract metrics from chunks the same way
+functions = chunk.extract_functions_metrics(
+    min_depth=1,
+    filter_system_frames=True
+)
+```
+
+## Complete example
+
+Here's a complete example that puts it all together:
+
+```python
+import vroomrs
+
+# Load and normalize a profile
+with open("profile.json", "r") as f:
+    profile_json = f.read()
+
+profile = vroomrs.profile_from_json_str(profile_json, platform="android")
+profile.normalize()
+
+# Get profile metadata
+metadata = profile.get_metadata()
+print(f"Platform: {profile.get_platform()}")
+print(f"Duration: {profile.duration_ns() / 1_000_000}ms")
+
+# Extract and analyze function metrics
+functions = profile.extract_functions_metrics(
+    min_depth=1,
+    filter_system_frames=True,
+    max_unique_functions=20
+)
+
+print(f"\nTop {len(functions)} slowest functions:")
+for i, func in enumerate(functions, 1):
+    self_time_ms = func.get_sum_self_time_ns() / 1_000_000
+    sample_count = func.get_sample_count()
+    print(f"{i}. {func.get_function()}: {self_time_ms:.2f}ms ({sample_count} samples)")
+
+# Detect performance issues
+occurrences = profile.find_occurrences()
+
+if occurrences.get_occurrences():
+    print(f"\nFound {len(occurrences.get_occurrences())} performance issues:")
+    for occurrence in occurrences.get_occurrences():
+        print(f"  - {occurrence.get_type()}: {occurrence.get_issue_title()}")
+```
 
 ## Next steps
 
-Now that you have your docs running, explore these key features:
-
 <CardGroup cols={2}>
-
-<Card title="Write Content" icon="pen-to-square" href="/essentials/markdown">
-  Learn MDX syntax and start writing your documentation.
-</Card>
-
-<Card title="Customize style" icon="palette" href="/essentials/settings">
-  Make your docs match your brand perfectly.
-</Card>
-
-<Card title="Add code examples" icon="square-code" href="/essentials/code">
-  Include syntax-highlighted code blocks.
-</Card>
-
-<Card title="API documentation" icon="code" href="/api-reference/introduction">
-  Auto-generate API docs from OpenAPI specs.
-</Card>
-
+  <Card title="Core concepts" icon="book" href="/concepts/profiles">
+    Learn about Profiles and ProfileChunks
+  </Card>
+  <Card title="Extracting metrics" icon="chart-line" href="/guides/extracting-metrics">
+    Deep dive into function metrics
+  </Card>
+  <Card title="Performance detection" icon="magnifying-glass" href="/guides/performance-detection">
+    Understand automatic issue detection
+  </Card>
+  <Card title="API reference" icon="code" href="/api/profile/overview">
+    Explore the complete API
+  </Card>
 </CardGroup>
-
-<Note>
-  **Need help?** See our [full documentation](https://mintlify.com/docs) or join our [community](https://mintlify.com/community).
-</Note>

@@ -1,0 +1,377 @@
+---
+title: Extracting function metrics
+description: Deep dive into extract_functions_metrics() for call tree analysis
+---
+
+The `extract_functions_metrics()` method is the primary tool for analyzing function-level performance in profiles. It traverses the call tree and extracts detailed metrics about each function's execution.
+
+## Basic usage
+
+```python
+import vroomrs
+
+profile = vroomrs.profile_from_json_str(profile_json, platform="python")
+profile.normalize()
+
+# Extract metrics with default settings
+metrics = profile.extract_functions_metrics(
+    min_depth=1,
+    filter_system_frames=True,
+    max_unique_functions=100
+)
+
+for metric in metrics:
+    print(f"{metric.get_function()}: {metric.get_sum_self_time_ns() / 1_000_000:.2f}ms")
+```
+
+## Method signature
+
+```python
+def extract_functions_metrics(
+    min_depth: int,
+    filter_system_frames: bool,
+    max_unique_functions: Optional[int] = None,
+    filter_non_leaf_functions: bool = True,
+    generate_stack_fingerprints: bool = False
+) -> List[CallTreeFunction]:
+```
+
+## Parameters explained
+
+### min_depth
+
+The minimum depth in the call tree at which to start collecting functions.
+
+```python
+# Ignore root frames (depth=0), start at depth 1
+metrics = profile.extract_functions_metrics(
+    min_depth=1,
+    filter_system_frames=True
+)
+
+# Start from depth 2 to skip top-level application entry points
+metrics = profile.extract_functions_metrics(
+    min_depth=2,
+    filter_system_frames=True
+)
+```
+
+<Info>
+  Use `min_depth=1` to exclude the root frame (often just "main" or the thread entry point) which typically has 100% of the profile duration and provides little insight.
+</Info>
+
+### filter_system_frames
+
+When `True`, filters out system/standard library frames from the results.
+
+```python
+# Only application code
+app_metrics = profile.extract_functions_metrics(
+    min_depth=1,
+    filter_system_frames=True
+)
+
+# Include system frames
+all_metrics = profile.extract_functions_metrics(
+    min_depth=1,
+    filter_system_frames=False
+)
+```
+
+<Warning>
+  When `filter_system_frames=True`, functions with `in_app=False` are excluded from results AND self-time calculations only consider time spent in application functions.
+</Warning>
+
+### max_unique_functions
+
+Limits the number of functions returned, sorted by total self-time descending.
+
+```python
+# Get top 10 slowest functions
+top_10 = profile.extract_functions_metrics(
+    min_depth=1,
+    filter_system_frames=True,
+    max_unique_functions=10
+)
+
+# Get all functions (no limit)
+all_functions = profile.extract_functions_metrics(
+    min_depth=1,
+    filter_system_frames=True,
+    max_unique_functions=None
+)
+```
+
+<Tip>
+  For large profiles, limiting results improves performance and focuses on the most impactful functions. Start with 50-100 functions for initial analysis.
+</Tip>
+
+### filter_non_leaf_functions
+
+When `True` (default), excludes functions with zero self-time.
+
+```python
+# Only leaf functions with actual self-time
+leaf_only = profile.extract_functions_metrics(
+    min_depth=1,
+    filter_system_frames=True,
+    filter_non_leaf_functions=True  # Default
+)
+
+# Include all functions, even those with zero self-time
+all_functions = profile.extract_functions_metrics(
+    min_depth=1,
+    filter_system_frames=True,
+    filter_non_leaf_functions=False
+)
+```
+
+<Note>
+  Self-time calculation differs for application vs system functions:
+  - **Application functions**: Self-time only considers time spent in child application functions
+  - **System functions**: Self-time considers all child functions (both app and system)
+  
+  This ensures application function self-time reflects only application code overhead.
+</Note>
+
+### generate_stack_fingerprints
+
+When `True`, generates fingerprints for the entire call stack up to each function.
+
+```python
+# Generate stack fingerprints for call path analysis
+metrics = profile.extract_functions_metrics(
+    min_depth=1,
+    filter_system_frames=True,
+    generate_stack_fingerprints=True
+)
+
+for metric in metrics:
+    stack_fp = metric.get_stack_fingerprint()
+    parent_fp = metric.get_parent_fingerprint()
+    depth = metric.get_depth()
+    print(f"{metric.get_function()} at depth {depth}")
+    print(f"  Stack fingerprint: {stack_fp}")
+    print(f"  Parent fingerprint: {parent_fp}")
+```
+
+## Understanding CallTreeFunction results
+
+Each `CallTreeFunction` object contains comprehensive metrics:
+
+### Function identification
+
+```python
+for func in metrics:
+    # Basic identification
+    function_name = func.get_function()  # e.g., "process_data"
+    package_name = func.get_package()    # e.g., "myapp.utils"
+    fingerprint = func.get_fingerprint() # Unique hash
+    
+    # Context
+    is_app_code = func.get_in_app()      # True if application code
+    thread_id = func.get_thread_id()     # Thread where function executed
+```
+
+### Timing metrics
+
+```python
+for func in metrics:
+    # Self-time (time spent in this function only)
+    self_times = func.get_self_times_ns()        # List of individual samples
+    total_self_time = func.get_sum_self_time_ns() # Sum of all self-times
+    
+    # Total time (includes children)
+    total_times = func.get_total_times_ns()  # List of total times per occurrence
+    
+    # Maximum single execution
+    max_duration = func.get_max_duration()  # Longest single execution in ns
+    
+    # Sample count
+    samples = func.get_sample_count()  # Number of times function was sampled
+```
+
+### Stack information (when enabled)
+
+```python
+# Only available when generate_stack_fingerprints=True
+if generate_stack_fingerprints:
+    for func in metrics:
+        stack_fp = func.get_stack_fingerprint()   # Hash of full call path
+        parent_fp = func.get_parent_fingerprint() # Hash of parent frame
+        depth = func.get_depth()                  # Depth in call tree
+```
+
+## Practical examples
+
+### Find slowest application functions
+
+<Steps>
+  <Step title="Load and normalize profile">
+    ```python
+    profile = vroomrs.profile_from_json_str(json_data, platform="python")
+    profile.normalize()
+    ```
+  </Step>
+  
+  <Step title="Extract top functions">
+    ```python
+    metrics = profile.extract_functions_metrics(
+        min_depth=1,
+        filter_system_frames=True,
+        max_unique_functions=20
+    )
+    ```
+  </Step>
+  
+  <Step title="Analyze results">
+    ```python
+    for func in metrics:
+        name = func.get_function()
+        package = func.get_package()
+        self_time_ms = func.get_sum_self_time_ns() / 1_000_000
+        samples = func.get_sample_count()
+        
+        print(f"{package}.{name}")
+        print(f"  Self-time: {self_time_ms:.2f}ms")
+        print(f"  Samples: {samples}")
+        print()
+    ```
+  </Step>
+</Steps>
+
+### Analyze call patterns with stack fingerprints
+
+```python
+metrics = profile.extract_functions_metrics(
+    min_depth=0,
+    filter_system_frames=False,
+    filter_non_leaf_functions=False,
+    generate_stack_fingerprints=True
+)
+
+# Group by function to see different call paths
+from collections import defaultdict
+
+function_paths = defaultdict(list)
+
+for func in metrics:
+    key = f"{func.get_package()}.{func.get_function()}"
+    function_paths[key].append({
+        'stack_fp': func.get_stack_fingerprint(),
+        'parent_fp': func.get_parent_fingerprint(),
+        'depth': func.get_depth(),
+        'self_time_ns': func.get_sum_self_time_ns()
+    })
+
+# Find functions called from multiple contexts
+for func_name, paths in function_paths.items():
+    if len(paths) > 1:
+        print(f"{func_name} called from {len(paths)} different contexts")
+        for path in paths:
+            print(f"  At depth {path['depth']}: {path['self_time_ns'] / 1_000_000:.2f}ms")
+```
+
+### Compare application vs system overhead
+
+```python
+# Get all metrics without filtering
+all_metrics = profile.extract_functions_metrics(
+    min_depth=1,
+    filter_system_frames=False
+)
+
+app_time = sum(
+    m.get_sum_self_time_ns()
+    for m in all_metrics
+    if m.get_in_app()
+)
+
+system_time = sum(
+    m.get_sum_self_time_ns()
+    for m in all_metrics
+    if not m.get_in_app()
+)
+
+total_time = profile.duration_ns()
+
+print(f"Application code: {app_time / 1_000_000:.2f}ms ({app_time / total_time * 100:.1f}%)")
+print(f"System code: {system_time / 1_000_000:.2f}ms ({system_time / total_time * 100:.1f}%)")
+```
+
+### Export to DataFrame for analysis
+
+```python
+import pandas as pd
+
+metrics = profile.extract_functions_metrics(
+    min_depth=1,
+    filter_system_frames=True,
+    max_unique_functions=100
+)
+
+# Convert to DataFrame
+data = []
+for func in metrics:
+    data.append({
+        'function': func.get_function(),
+        'package': func.get_package(),
+        'self_time_ms': func.get_sum_self_time_ns() / 1_000_000,
+        'max_duration_ms': func.get_max_duration() / 1_000_000,
+        'sample_count': func.get_sample_count(),
+        'thread_id': func.get_thread_id(),
+        'in_app': func.get_in_app()
+    })
+
+df = pd.DataFrame(data)
+
+# Analyze
+print("Top functions by self-time:")
+print(df.sort_values('self_time_ms', ascending=False).head(10))
+
+print("\nFunctions with highest max duration:")
+print(df.sort_values('max_duration_ms', ascending=False).head(10))
+```
+
+## Performance considerations
+
+<Tabs>
+  <Tab title="Best practices">
+    - **Use platform hints** when loading profiles for faster deserialization
+    - **Limit results** with `max_unique_functions` for large profiles
+    - **Filter system frames** unless you need them - reduces processing time
+    - **Avoid stack fingerprints** unless needed - they add computational overhead
+  </Tab>
+  
+  <Tab title="Memory usage">
+    - Each `CallTreeFunction` is lightweight (< 1KB)
+    - Setting `max_unique_functions=100` typically uses < 100KB
+    - Stack fingerprints add minimal overhead per function
+    - Non-leaf functions (when included) can double the result count
+  </Tab>
+</Tabs>
+
+## Filtering and aggregation
+
+Results are automatically:
+- **Filtered**: Functions with ≤1 sample are excluded to reduce noise
+- **Sorted**: By `sum_self_time_ns` descending (slowest first)
+- **Truncated**: To `max_unique_functions` if specified
+
+```python
+# All metrics already sorted by self-time
+metrics = profile.extract_functions_metrics(
+    min_depth=1,
+    filter_system_frames=True
+)
+
+# Metrics[0] is always the slowest function
+slowest = metrics[0]
+print(f"Slowest function: {slowest.get_function()}")
+print(f"Self-time: {slowest.get_sum_self_time_ns() / 1_000_000:.2f}ms")
+```
+
+## Next steps
+
+- [Detecting performance issues](/guides/performance-detection) - Automatically find bottlenecks
+- [Platform support](/guides/platform-support) - Platform-specific considerations

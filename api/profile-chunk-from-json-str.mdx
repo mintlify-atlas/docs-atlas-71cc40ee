@@ -1,0 +1,68 @@
+---
+title: profile_chunk_from_json_str
+description: Deserialize a JSON string into a ProfileChunk instance
+---
+
+## Overview
+
+Deserializes a JSON-formatted profile string into a `ProfileChunk` object. This function is optimized for continuous profiling data and supports platform-specific deserialization for improved performance.
+
+## Signature
+
+```python
+def profile_chunk_from_json_str(
+    profile: str,
+    platform: Optional[str] = None
+) -> ProfileChunk
+```
+
+## Parameters
+
+<ParamField path="profile" type="str" required>
+  A profile serialized as a JSON string.
+</ParamField>
+
+<ParamField path="platform" type="Optional[str]">
+  An optional string representing the profile platform (e.g., "python", "node", "android"). If provided, the function can directly deserialize to the right profile chunk more efficiently. If the platform is known at the time this function is invoked, it's recommended to always pass it.
+</ParamField>
+
+## Returns
+
+<ResponseField name="return" type="ProfileChunk">
+  A `ProfileChunk` instance containing the deserialized profile data.
+</ResponseField>
+
+## Raises
+
+<ResponseField name="ValueError" type="Exception">
+  Raised if an error occurs during the deserialization process, such as invalid JSON format or corrupted profile data.
+</ResponseField>
+
+## Example
+
+```python
+import vroomrs
+import json
+
+# Load profile JSON from file
+with open("profile_chunk.json", "r") as f:
+    profile_json = f.read()
+
+# Deserialize without platform hint
+profile_chunk = vroomrs.profile_chunk_from_json_str(profile_json)
+
+# Deserialize with platform hint for better performance
+profile_chunk = vroomrs.profile_chunk_from_json_str(profile_json, platform="python")
+
+# Access profile chunk data
+print(f"Platform: {profile_chunk.get_platform()}")
+print(f"Duration: {profile_chunk.duration_ms()}ms")
+print(f"Chunk ID: {profile_chunk.get_chunk_id()}")
+```
+
+## Notes
+
+- For optimal performance, always provide the `platform` parameter when the platform is known
+- This function is specifically designed for continuous profiling chunks, not transaction profiles
+- For transaction profiles, use [`profile_from_json_str`](/api/profile-from-json-str) instead
+- The function validates the JSON structure and will raise an error if the format is invalid

@@ -1,0 +1,224 @@
+---
+title: Working with profiles
+description: Learn how to load, parse, and manipulate profiles in vroomrs
+---
+
+vroomrs provides powerful tools for loading and analyzing performance profiles collected from various platforms. This guide covers the essential operations for working with profile data.
+
+## Loading profiles from JSON
+
+The most common way to load a profile is from a JSON string using `profile_from_json_str()`:
+
+```python
+import vroomrs
+
+# Load profile from JSON string
+with open('profile.json', 'r') as f:
+    profile_json = f.read()
+
+profile = vroomrs.profile_from_json_str(profile_json)
+```
+
+<Note>
+  vroomrs automatically detects the profile format. Profiles without a `version` field are treated as Android profiles, while those with a `version` field are treated as sample-based profiles (iOS, Python, Node.js, etc.).
+</Note>
+
+## Using platform hints for better performance
+
+When you know the platform in advance, pass it as a parameter for faster deserialization:
+
+```python
+# Direct deserialization with platform hint
+profile = vroomrs.profile_from_json_str(profile_json, platform="android")
+
+# Supported platforms: android, cocoa, python, node, etc.
+ios_profile = vroomrs.profile_from_json_str(ios_json, platform="cocoa")
+```
+
+<Tip>
+  Always provide the `platform` parameter when possible. This allows vroomrs to skip format detection and deserialize directly to the correct profile type, significantly improving performance.
+</Tip>
+
+## Loading compressed profiles
+
+vroomrs supports LZ4-compressed profiles for efficient storage and transmission:
+
+```python
+# Decompress and load profile from LZ4
+with open('profile.lz4', 'rb') as f:
+    compressed_data = f.read()
+
+profile = vroomrs.decompress_profile(compressed_data)
+```
+
+## Accessing profile metadata
+
+Once loaded, you can access comprehensive metadata about the profile:
+
+### Basic information
+
+```python
+# Profile identifiers
+profile_id = profile.get_profile_id()
+project_id = profile.get_project_id()
+org_id = profile.get_organization_id()
+
+# Platform and environment
+platform = profile.get_platform()  # "android", "cocoa", "python", etc.
+environment = profile.get_environment()  # "production", "staging", etc.
+release = profile.get_release()  # Release version
+
+# Timing information
+timestamp = profile.get_timestamp()  # Unix timestamp with millisecond precision
+duration_ns = profile.duration_ns()  # Profile duration in nanoseconds
+```
+
+### SDK information
+
+```python
+sdk_name = profile.sdk_name()  # "sentry.python", "sentry.cocoa", etc.
+sdk_version = profile.sdk_version()  # SDK version string
+```
+
+### Transaction context
+
+```python
+transaction = profile.get_transaction()
+
+print(f"Transaction ID: {transaction.id}")
+print(f"Transaction name: {transaction.name}")
+print(f"Trace ID: {transaction.trace_id}")
+print(f"Active thread: {transaction.active_thread_id}")
+print(f"Duration: {transaction.duration_ns} ns")
+```
+
+### Comprehensive metadata
+
+```python
+metadata = profile.get_metadata()
+
+# Device information
+print(f"Device: {metadata.device_manufacturer} {metadata.device_model}")
+print(f"OS: {metadata.device_os_name} {metadata.device_os_version}")
+print(f"Architecture: {metadata.architecture}")
+
+# Android-specific
+if metadata.android_api_level:
+    print(f"Android API level: {metadata.android_api_level}")
+
+# App version
+if metadata.version_name:
+    print(f"App version: {metadata.version_name} ({metadata.version_code})")
+```
+
+## Normalizing profiles
+
+Apply platform-specific normalization steps to clean and prepare profile data:
+
+```python
+# Normalize the profile
+profile.normalize()
+```
+
+<Info>
+  Normalization applies different transformations depending on the platform:
+  - **Android**: Strips package names from method signatures for cleaner display
+  - **iOS/Cocoa**: Applies symbolication status checks
+  - **Other platforms**: Applies platform-specific frame filtering and cleanup
+</Info>
+
+## Common workflows
+
+### Loading and inspecting a profile
+
+<Steps>
+  <Step title="Load the profile">
+    ```python
+    profile = vroomrs.profile_from_json_str(json_data, platform="android")
+    ```
+  </Step>
+  
+  <Step title="Check if it's sampled">
+    ```python
+    if profile.is_sampled():
+        print("Profile contains sampled data")
+    ```
+  </Step>
+  
+  <Step title="Normalize for analysis">
+    ```python
+    profile.normalize()
+    ```
+  </Step>
+  
+  <Step title="Extract metadata">
+    ```python
+    metadata = profile.get_metadata()
+    print(f"Collected from: {metadata.device_model} running {metadata.device_os_name}")
+    print(f"Duration: {profile.duration_ns() / 1_000_000:.2f} ms")
+    ```
+  </Step>
+</Steps>
+
+### Compressing profiles for storage
+
+```python
+# Compress profile to LZ4 format
+compressed = profile.compress()
+
+# Save to disk
+with open('profile.lz4', 'wb') as f:
+    f.write(compressed)
+
+print(f"Compressed size: {len(compressed)} bytes")
+```
+
+### Updating profile identifiers
+
+```python
+# Set a new profile ID
+profile.set_profile_id("06ccc59502e64154a352e25cb59ccf08")
+
+print(f"New profile ID: {profile.get_profile_id()}")
+```
+
+## Working with ProfileChunk
+
+For continuous profiling scenarios, use `ProfileChunk` instead of `Profile`:
+
+```python
+# Load profile chunk
+chunk = vroomrs.profile_chunk_from_json_str(chunk_json, platform="android")
+
+# Access chunk-specific information
+chunk_id = chunk.get_chunk_id()
+profiler_id = chunk.get_profiler_id()
+start = chunk.start_timestamp()
+end = chunk.end_timestamp()
+duration_ms = chunk.duration_ms()
+
+print(f"Chunk {chunk_id} from {start} to {end} ({duration_ms}ms)")
+```
+
+<Note>
+  `ProfileChunk` and `Profile` share most methods for metadata access and analysis. The main difference is that chunks represent segments of continuous profiling data rather than transaction-bound profiles.
+</Note>
+
+## Storage paths
+
+Get the storage path for organizing profiles:
+
+```python
+storage_path = profile.storage_path()
+print(f"Store at: {storage_path}")
+```
+
+The storage path is constructed from the profile's organizational and temporal attributes, making it ideal for hierarchical storage systems.
+
+## Next steps
+
+Now that you understand how to load and manipulate profiles, explore:
+
+- [Extracting function metrics](/guides/extracting-metrics) - Analyze call tree performance
+- [Detecting performance issues](/guides/performance-detection) - Find bottlenecks automatically
+- [Platform support](/guides/platform-support) - Learn platform-specific features

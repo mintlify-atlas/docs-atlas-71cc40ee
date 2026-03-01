@@ -1,0 +1,89 @@
+---
+title: 'ProfileChunk class'
+description: 'Continuous profiling data processing for Python applications'
+---
+
+The `ProfileChunk` class represents a segment of continuous profiling data collected from your application. Unlike the `Profile` class which represents transaction-based profiles, `ProfileChunk` handles time-windowed profiling data that can span multiple transactions.
+
+## What is a ProfileChunk?
+
+A ProfileChunk is a time-bounded segment of profiling data that contains:
+- Call stack samples collected over a time window
+- Performance metrics and function-level statistics
+- Platform-specific profiling information
+- Metadata about the profiling session
+
+ProfileChunks are used for continuous profiling scenarios where you want to analyze application performance over time rather than focusing on individual transactions.
+
+## Creating ProfileChunk instances
+
+You can create ProfileChunk instances from JSON strings or compressed data:
+
+### From JSON string
+
+```python
+import vroomrs
+
+# Create from JSON string
+json_data = '{"platform": "python", ...}'
+profile_chunk = vroomrs.profile_chunk_from_json_str(json_data)
+
+# Or specify platform for better performance
+profile_chunk = vroomrs.profile_chunk_from_json_str(json_data, platform="python")
+```
+
+### From compressed data
+
+```python
+import vroomrs
+
+# Load and decompress a profile chunk
+with open("profile_chunk.lz4", "rb") as f:
+    profile_chunk = vroomrs.decompress_profile_chunk(f.read())
+```
+
+## ProfileChunk vs Profile
+
+The main differences between ProfileChunk and Profile:
+
+| Feature | ProfileChunk | Profile |
+|---------|-------------|----------|
+| Scope | Time-windowed continuous profiling | Transaction-based profiling |
+| Duration | Uses `duration_ms()` | Uses `duration_ns()` |
+| Timestamp | Has `start_timestamp()` and `end_timestamp()` | Has single `get_timestamp()` |
+| ID | Uses `get_chunk_id()` and `get_profiler_id()` | Uses `get_profile_id()` |
+| Use case | Long-running performance analysis | Transaction performance analysis |
+
+## Quick example
+
+```python
+import vroomrs
+
+# Load a profile chunk
+with open("chunk.lz4", "rb") as f:
+    chunk = vroomrs.decompress_profile_chunk(f.read())
+
+# Normalize the data
+chunk.normalize()
+
+# Get metadata
+print(f"Platform: {chunk.get_platform()}")
+print(f"Duration: {chunk.duration_ms()}ms")
+print(f"Project: {chunk.get_project_id()}")
+
+# Extract function metrics
+metrics = chunk.extract_functions_metrics(
+    min_depth=1,
+    filter_system_frames=True,
+    max_unique_functions=20
+)
+
+for metric in metrics:
+    print(f"{metric.get_function()}: {metric.get_sum_self_time_ns()}ns")
+```
+
+## See also
+
+- [ProfileChunk methods](/api/profile-chunk/methods) - All available methods
+- [Call tree extraction](/api/profile-chunk/call-trees) - Working with call trees
+- [Profile class](/api/profile/overview) - Transaction-based profiling

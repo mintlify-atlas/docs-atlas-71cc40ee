@@ -1,0 +1,481 @@
+---
+title: Compression
+description: Using LZ4 compression for efficient profile storage and transmission
+---
+
+## Overview
+
+vroomrs provides built-in support for LZ4 compression, allowing you to compress and decompress profiling data efficiently. This is essential for reducing storage costs and network bandwidth when working with large profiling datasets.
+
+## Why LZ4?
+
+LZ4 is chosen for its excellent balance of:
+
+- **Speed**: Extremely fast compression and decompression
+- **Compression ratio**: Good space savings for typical profiling data
+- **Streaming**: Suitable for real-time profiling scenarios
+- **Industry standard**: Widely supported across platforms and languages
+
+From the implementation in `src/utils.rs:12-24`, vroomrs uses LZ4 with:
+- **Level 9 compression**: Maximum compression ratio
+- **No block checksums**: For better performance
+
+```rust
+pub(crate) fn compress_lz4(source: &mut &[u8]) -> Result<Vec<u8>, std::io::Error> {
+    let b: Vec<u8> = vec![];
+    let mut encoder = EncoderBuilder::new()
+        .block_checksum(lz4::liblz4::BlockChecksum::NoBlockChecksum)
+        .level(9)
+        .build(b)?;
+    io::copy(source, &mut encoder)?;
+    let (compressed_data, res) = encoder.finish();
+    match res {
+        Ok(_) => Ok(compressed_data),
+        Err(error) => Err(error),
+    }
+}
+```
+
+## Compressing profiles
+
+Both `Profile` and `ProfileChunk` can be compressed using the `compress()` method.
+
+### Compressing a Profile
+
+```python
+import vroomrs
+
+# Load profile
+profile = vroomrs.profile_from_json_str(json_data, platform="python")
+
+# Optional: normalize before compressing
+profile.normalize()
+
+# Compress to bytes
+compressed_bytes = profile.compress()
+
+# Save to file
+with open("profile.lz4", "wb") as f:
+    f.write(compressed_bytes)
+
+print(f"Compressed size: {len(compressed_bytes)} bytes")
+```
+
+### Compressing a ProfileChunk
+
+```python
+import vroomrs
+
+# Load chunk
+chunk = vroomrs.profile_chunk_from_json_str(json_data, platform="cocoa")
+
+# Normalize
+chunk.normalize()
+
+# Compress
+compressed_bytes = chunk.compress()
+
+# Save with chunk ID in filename
+filename = f"chunk_{chunk.get_chunk_id()}.lz4"
+with open(filename, "wb") as f:
+    f.write(compressed_bytes)
+```
+
+### Method signature
+
+From `vroomrs.pyi:174-192` (Profile) and `vroomrs.pyi:410-427` (ProfileChunk):
+
+```python
+def compress(self) -> bytes:
+    """
+    Compresses the profile with lz4.
+
+    This method serializes the profile to json and then compresses it with lz4,
+    returning the bytes representing the lz4 encoded profile.
+
+    Returns:
+        bytes: A bytes object representing the lz4 encoded profile.
+
+    Raises:
+        Exception: If an error occurs during the extraction process.
+
+    Example:
+        >>> compressed_profile = profile.compress()
+        >>> with open("profile_compressed.lz4", "wb+") as binary_file:
+        ...     binary_file.write(compressed_profile)
+    """
+```
+
+## Decompressing profiles
+
+vroomrs provides dedicated functions for decompressing LZ4-encoded profiles.
+
+### Decompressing to Profile
+
+Use `decompress_profile()` to decompress directly to a `Profile` instance:
+
+```python
+import vroomrs
+
+# Read compressed file
+with open("profile.lz4", "rb") as f:
+    compressed_data = f.read()
+
+# Decompress
+profile = vroomrs.decompress_profile(compressed_data)
+
+# Use the profile
+print(f"Platform: {profile.get_platform()}")
+print(f"Duration: {profile.duration_ns()}ns")
+```
+
+From `src/lib.rs:116-143`:
+
+```rust
+/// Returns a `Profile` instance from a lz4 encoded profile.
+///
+/// Arguments
+/// ---------
+/// profile : bytes
+///   A lz4 encoded profile.
+///
+/// Returns
+/// -------
+/// :class:`vroomrs.Profile`
+///   A `Profile` instance
+///
+/// Raises
+/// ------
+/// pyo3.exceptions.PyException
+///     If an error occurs during the extraction process.
+///
+/// Example
+/// --------
+///     >>> with open("profile_compressed.lz4", "rb") as binary_file:
+///     ...     profile = vroomrs.decompress_profile(binary_file.read())
+///             # do something with the profile
+///
+#[pyfunction]
+fn decompress_profile(profile: &[u8]) -> PyResult<Profile> {
+    Profile::decompress(profile)
+        .map_err(|e| PyErr::new::<pyo3::exceptions::PyValueError, _>(e.to_string()))
+}
+```
+
+### Decompressing to ProfileChunk
+
+Use `decompress_profile_chunk()` for chunk data:
+
+```python
+import vroomrs
+
+# Read compressed chunk
+with open("chunk_abc123.lz4", "rb") as f:
+    compressed_data = f.read()
+
+# Decompress
+chunk = vroomrs.decompress_profile_chunk(compressed_data)
+
+# Use the chunk
+print(f"Chunk ID: {chunk.get_chunk_id()}")
+print(f"Duration: {chunk.duration_ms()}ms")
+```
+
+From `src/lib.rs:87-114`:
+
+```rust
+/// Returns a `ProfileChunk` instance from a lz4 encoded profile.
+///
+/// Arguments
+/// ---------
+/// profile : bytes
+///   A lz4 encoded profile.
+///
+/// Returns
+/// -------
+/// :class:`vroomrs.ProfileChunk`
+///   A `ProfileChunk` instance
+///
+/// Raises
+/// ------
+/// pyo3.exceptions.PyException
+///     If an error occurs during the extraction process.
+///
+/// Example
+/// --------
+///     >>> with open("profile_compressed.lz4", "rb") as binary_file:
+///     ...     profile = vroomrs.decompress_profile_chunk(binary_file.read())
+///             # do something with the profile
+///
+#[pyfunction]
+fn decompress_profile_chunk(profile: &[u8]) -> PyResult<ProfileChunk> {
+    ProfileChunk::decompress(profile)
+        .map_err(|e| PyErr::new::<pyo3::exceptions::PyValueError, _>(e.to_string()))
+}
+```
+
+## Compression workflow
+
+The compression process has three stages:
+
+1. **Serialize to JSON**: The profile is first serialized to a JSON byte vector
+2. **Compress with LZ4**: The JSON bytes are compressed using LZ4 level 9
+3. **Return bytes**: Compressed bytes are returned to Python
+
+### Internal implementation
+
+From `src/profile.rs:241-264` (Profile):
+
+```rust
+pub fn compress(&self) -> PyResult<Vec<u8>> {
+    let prof = self
+        .profile
+        .to_json_vec()
+        .map_err(|e| PyErr::new::<pyo3::exceptions::PyValueError, _>(e.to_string()))?;
+    compress_lz4(&mut prof.as_slice())
+        .map_err(|e| PyErr::new::<pyo3::exceptions::PyValueError, _>(e.to_string()))
+}
+```
+
+The same pattern is used for ProfileChunk in `src/profile_chunk.rs:237-244`.
+
+## Decompression workflow
+
+Decompression is the reverse:
+
+1. **Decompress LZ4**: Extract the JSON bytes from the LZ4 stream
+2. **Deserialize JSON**: Parse the JSON into the appropriate structure
+3. **Return object**: Create and return the Profile or ProfileChunk
+
+From `src/profile.rs:63-67`:
+
+```rust
+pub(crate) fn decompress(source: &[u8]) -> Result<Self, Box<dyn std::error::Error>> {
+    let bytes = decompress_lz4(source)?;
+    Self::from_json_vec(bytes.as_ref())
+        .map_err(|err| Box::new(err) as Box<dyn std::error::Error>)
+}
+```
+
+## Use cases
+
+### Storing profiles for analysis
+
+Compress profiles before saving to disk:
+
+```python
+import vroomrs
+import os
+
+def store_profile(profile_data: str, profile_id: str, storage_dir: str):
+    """Store a profile compressed on disk."""
+    
+    # Load and normalize
+    profile = vroomrs.profile_from_json_str(profile_data)
+    profile.normalize()
+    
+    # Compress
+    compressed = profile.compress()
+    
+    # Store
+    filepath = os.path.join(storage_dir, f"{profile_id}.lz4")
+    with open(filepath, "wb") as f:
+        f.write(compressed)
+    
+    # Return size info
+    original_size = len(profile_data.encode('utf-8'))
+    compressed_size = len(compressed)
+    ratio = compressed_size / original_size
+    
+    return {
+        'original_size': original_size,
+        'compressed_size': compressed_size,
+        'ratio': ratio,
+        'filepath': filepath
+    }
+```
+
+### Network transmission
+
+Compress before sending over the network:
+
+```python
+import vroomrs
+import requests
+
+def upload_profile(profile_data: str, api_endpoint: str):
+    """Upload compressed profile to API."""
+    
+    # Load and prepare
+    profile = vroomrs.profile_from_json_str(profile_data)
+    profile.normalize()
+    
+    # Compress for transmission
+    compressed = profile.compress()
+    
+    # Upload
+    response = requests.post(
+        api_endpoint,
+        data=compressed,
+        headers={'Content-Type': 'application/x-lz4'}
+    )
+    
+    return response.status_code == 200
+```
+
+### Batch processing pipeline
+
+Compress chunks in a streaming pipeline:
+
+```python
+import vroomrs
+import gzip
+from typing import Iterator
+
+def process_and_compress_chunks(
+    chunk_stream: Iterator[str],
+    platform: str
+) -> Iterator[bytes]:
+    """Process chunks and yield compressed data."""
+    
+    for chunk_data in chunk_stream:
+        # Load chunk
+        chunk = vroomrs.profile_chunk_from_json_str(
+            chunk_data,
+            platform=platform
+        )
+        
+        # Normalize
+        chunk.normalize()
+        
+        # Compress and yield
+        yield chunk.compress()
+
+# Usage
+for compressed_chunk in process_and_compress_chunks(chunks, "python"):
+    # Store or transmit compressed_chunk
+    pass
+```
+
+### Archive compression
+
+Double compression with gzip for long-term storage:
+
+```python
+import vroomrs
+import gzip
+
+def archive_profile(profile_data: str, archive_path: str):
+    """Archive profile with double compression."""
+    
+    # First compress with LZ4 (fast, good ratio)
+    profile = vroomrs.profile_from_json_str(profile_data)
+    lz4_compressed = profile.compress()
+    
+    # Then compress with gzip (better ratio, slower)
+    with gzip.open(archive_path, 'wb') as f:
+        f.write(lz4_compressed)
+    
+    # Note: This is usually overkill, LZ4 alone is sufficient
+```
+
+<Note>
+For most use cases, LZ4 compression alone provides an excellent balance of speed and compression ratio. Double compression is rarely necessary.
+</Note>
+
+## Compression ratios
+
+Typical compression ratios for profiling data:
+
+- **JSON profiles**: 10:1 to 20:1 compression ratio
+- **Larger profiles**: Better ratios due to more repetitive data
+- **Small profiles**: Lower ratios but still significant savings
+
+Example:
+```python
+import vroomrs
+
+profile = vroomrs.profile_from_json_str(large_json_data)
+compressed = profile.compress()
+
+original_size = len(large_json_data.encode('utf-8'))
+compressed_size = len(compressed)
+
+print(f"Original: {original_size:,} bytes")
+print(f"Compressed: {compressed_size:,} bytes")
+print(f"Ratio: {compressed_size/original_size:.1%}")
+# Output might be:
+# Original: 15,234,891 bytes
+# Compressed: 892,445 bytes
+# Ratio: 5.9%
+```
+
+## Error handling
+
+Both compression and decompression can fail:
+
+```python
+import vroomrs
+
+try:
+    # Compression can fail due to serialization errors
+    compressed = profile.compress()
+except Exception as e:
+    print(f"Compression failed: {e}")
+
+try:
+    # Decompression can fail due to corrupt data or wrong format
+    profile = vroomrs.decompress_profile(corrupted_data)
+except Exception as e:
+    print(f"Decompression failed: {e}")
+```
+
+<Warning>
+Always handle compression/decompression errors gracefully. Corrupted compressed data cannot be recovered.
+</Warning>
+
+## Round-trip guarantee
+
+The compression is lossless and round-trip safe:
+
+```python
+import vroomrs
+
+# Original
+original = vroomrs.profile_from_json_str(data)
+original.normalize()
+
+# Compress
+compressed = original.compress()
+
+# Decompress
+restored = vroomrs.decompress_profile(compressed)
+
+# Both profiles are functionally identical
+assert original.get_platform() == restored.get_platform()
+assert original.duration_ns() == restored.duration_ns()
+```
+
+From the test in `src/profile.rs:493-550`, this round-trip property is verified for all supported platforms.
+
+## Best practices
+
+1. **Compress before storage**: Always compress profiles before writing to disk
+2. **Compress before transmission**: Reduce network bandwidth by compressing first
+3. **Normalize before compression**: Normalization reduces redundancy, improving compression
+4. **Use appropriate function**: Use `decompress_profile()` for Profile, `decompress_profile_chunk()` for chunks
+5. **Handle errors**: Always wrap compression/decompression in try-except blocks
+
+```python
+import vroomrs
+
+def safe_compress_profile(profile_data: str, platform: str) -> bytes | None:
+    """Safely compress a profile with error handling."""
+    try:
+        profile = vroomrs.profile_from_json_str(profile_data, platform=platform)
+        profile.normalize()  # Reduce redundancy
+        return profile.compress()
+    except Exception as e:
+        print(f"Failed to compress profile: {e}")
+        return None
+```

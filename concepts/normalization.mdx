@@ -1,0 +1,326 @@
+---
+title: Normalization
+description: Understanding the profile normalization process and why it's essential
+---
+
+## What is normalization?
+
+Normalization is the process of applying platform-specific transformations to profiling data to ensure consistency and accuracy. Different profiling platforms have unique characteristics and quirks that need to be addressed before the data can be reliably analyzed.
+
+## The normalize() method
+
+Both `Profile` and `ProfileChunk` expose a `normalize()` method:
+
+```python
+import vroomrs
+
+# For Profile
+profile = vroomrs.profile_from_json_str(data)
+profile.normalize()  # Apply platform-specific normalization
+
+# For ProfileChunk
+chunk = vroomrs.profile_chunk_from_json_str(data)
+chunk.normalize()   # Apply platform-specific normalization
+```
+
+The method signature from the Python interface:
+
+```python
+def normalize(self) -> None:
+    """
+    Applies the various normalization steps,
+    depending on the profile's platform.
+    """
+```
+
+## Why normalization is needed
+
+Profiling data from different platforms contains platform-specific artifacts that can interfere with analysis:
+
+- **Unsymbolicated frames**: Some frames may lack symbols after the main function
+- **System noise**: Standard library frames that don't represent application code
+- **Runtime artifacts**: Platform-specific runtime frames that clutter call stacks
+- **Module loading**: Frames from module initialization that aren't relevant to execution analysis
+
+Normalization removes these artifacts to provide clean, analyzable data.
+
+<Warning>
+Always call `normalize()` before extracting metrics or analyzing profiles. Skipping normalization can lead to incorrect or misleading results.
+</Warning>
+
+## Platform-specific normalization
+
+The normalization steps vary by platform. Let's examine what happens for each:
+
+### iOS/Cocoa normalization
+
+For iOS (Cocoa) profiles, normalization performs **stack trimming** to remove unsymbolicated frames after the `main` function.
+
+From `src/sample/v1.rs:140-195`, the `trim_cocoa_stacks()` implementation:
+
+```rust
+fn trim_cocoa_stacks(&mut self) {
+    let mut mfi: i32 = -1;
+    // Find main frame index in frames
+    for (i, frame) in self.profile.frames.iter().enumerate() {
+        if frame
+            .function
+            .as_ref()
+            .is_some_and(|function| function.as_str() == "main")
+        {
+            mfi = i as i32;
+        }
+    }
+    // We do nothing if we don't find it
+    if mfi == -1 {
+        return;
+    }
+
+    for stack in &mut self.profile.stacks {
+        // Find main frame index in the stack
+        let mut msi = stack.len();
+        // Stop searching after 10 frames, it's not there
+        let mut until: usize = 0;
+        if stack.len() > 10 {
+            until = stack.len() - 10;
+        }
+        for i in (until..stack.len()).rev() {
+            let frame_idx = stack[i];
+            if frame_idx == mfi as usize {
+                msi = i;
+                break;
+            }
+        }
+        // Skip the stack if we're already at the end or we didn't find it
+        if msi >= stack.len().saturating_sub(1) {
+            continue;
+        }
+        // Filter unsymbolicated frames after the main frame index
+        let mut ci = msi + 1;
+        let loop_start_bound = ci;
+        for i in loop_start_bound..stack.len() {
+            let frame_index = stack[i];
+            let frame = &self.profile.frames[frame_index];
+            if let Some(symbolicator_status) = frame
+                .data
+                .as_ref()
+                .and_then(|data| data.symbolicator_status.as_ref())
+            {
+                if symbolicator_status == "symbolicated" {
+                    stack[ci] = frame_index;
+                    ci += 1;
+                }
+            }
+        }
+        stack.truncate(ci);
+    }
+}
+```
+
+#### What Cocoa normalization does:
+
+1. **Locate the main frame**: Searches all frames to find the `main` function
+2. **Process each stack**: For each call stack in the profile:
+   - Find where `main` appears (searching the last 10 frames for efficiency)
+   - Keep all frames up to and including `main`
+   - For frames after `main`, only keep those marked as "symbolicated"
+   - Remove unsymbolicated frames that appear after program entry
+
+<Info>
+This removes system startup frames and unsymbolicated runtime frames that aren't useful for analyzing your application's performance.
+</Info>
+
+### Python normalization
+
+For Python profiles, normalization removes **module loading frames** that appear during import time.
+
+The implementation trims frames related to Python's module system:
+
+```rust
+fn trim_python_stacks(&mut self) {
+    // Find the module frame index in frames
+    // [Implementation searches for specific Python runtime frames]
+}
+```
+
+Python normalization targets frames from:
+- Module importers (`_load_unlocked`, `exec_module`, etc.)
+- Runtime initialization
+- Standard library bootstrapping
+
+This ensures you're analyzing your application code, not Python's startup sequence.
+
+### Android normalization
+
+Android profiles may have their own normalization rules depending on the Android profiling format. The specific transformations are applied through the `AndroidProfile` or `AndroidChunk` implementations.
+
+### Generic/other platforms
+
+Platforms without specific normalization requirements simply apply identity transformations (no changes), but the `normalize()` method should still be called for consistency and future-proofing.
+
+## Implementation details
+
+The normalization is dispatched through the trait system:
+
+### For Profile
+
+From `src/profile.rs:112-117`:
+
+```rust
+#[pymethods]
+impl Profile {
+    /// Applies the various normalization steps,
+    /// depending on the profile's platform.
+    pub fn normalize(&mut self) {
+        self.profile.normalize();
+    }
+}
+```
+
+The call is delegated to the underlying `ProfileInterface` implementation, which determines the platform and applies the appropriate normalization.
+
+### For ProfileChunk
+
+From `src/profile_chunk.rs:71-76`:
+
+```rust
+#[pymethods]
+impl ProfileChunk {
+    /// Applies the various normalization steps,
+    /// depending on the profile's platform.
+    pub fn normalize(&mut self) {
+        self.profile.normalize();
+    }
+}
+```
+
+Similarly, this delegates to the underlying `ChunkInterface` implementation.
+
+## When to call normalize()
+
+The normalization should happen early in your processing pipeline:
+
+```python
+import vroomrs
+
+# ✅ CORRECT: Normalize immediately after loading
+profile = vroomrs.profile_from_json_str(data, platform="cocoa")
+profile.normalize()  # Clean the data first
+metrics = profile.extract_functions_metrics(...)  # Then analyze
+
+# ❌ INCORRECT: Analyzing without normalization
+profile = vroomrs.profile_from_json_str(data)
+metrics = profile.extract_functions_metrics(...)  # May include noise
+```
+
+<Tip>
+Make `normalize()` a standard step in your profiling pipeline. Even if the current platform doesn't require normalization, future platforms might.
+</Tip>
+
+## Example: Complete workflow
+
+Here's a complete example showing normalization in context:
+
+```python
+import vroomrs
+import json
+
+def analyze_profile(profile_json: str, platform: str):
+    """Analyze a profile with proper normalization."""
+    
+    # 1. Load the profile
+    profile = vroomrs.profile_from_json_str(
+        profile_json,
+        platform=platform
+    )
+    
+    # 2. Normalize platform-specific quirks
+    profile.normalize()
+    
+    # 3. Now safe to analyze
+    metrics = profile.extract_functions_metrics(
+        min_depth=1,
+        filter_system_frames=True,
+        max_unique_functions=100,
+        filter_non_leaf_functions=True
+    )
+    
+    # 4. Find performance issues
+    occurrences = profile.find_occurrences()
+    
+    return {
+        'platform': profile.get_platform(),
+        'duration_ns': profile.duration_ns(),
+        'top_functions': [
+            {
+                'name': f.get_function(),
+                'self_time_ns': f.get_sum_self_time_ns(),
+                'sample_count': f.get_sample_count()
+            }
+            for f in metrics[:10]
+        ],
+        'issues': len(occurrences.occurrences)
+    }
+
+# Usage
+with open('profile.json') as f:
+    results = analyze_profile(f.read(), platform='cocoa')
+    print(json.dumps(results, indent=2))
+```
+
+## Impact on analysis
+
+Without normalization, you might see:
+
+❌ **Before normalization**:
+```
+Function                              Self Time    Samples
+<unsymbolicated>                      45.2ms       234
+_dyld_start                           23.1ms       120  
+main                                  18.5ms       95
+MyApp.processData()                   12.3ms       63
+```
+
+✅ **After normalization**:
+```
+Function                              Self Time    Samples
+MyApp.processData()                   12.3ms       63
+MyApp.fetchNetworkData()              8.7ms        45
+MyApp.parseJSON()                     6.1ms        31
+```
+
+Normalization removes the noise and surfaces the application code that matters.
+
+## Thread safety
+
+The `normalize()` method mutates the profile in place:
+
+```python
+def normalize(self) -> None:
+    """Applies normalization steps (mutates the profile)."""
+```
+
+<Note>
+Normalization modifies the profile data structure. If you need to preserve the original profile, make a copy before normalizing (though this is rarely necessary).
+</Note>
+
+## Best practices
+
+1. **Always normalize**: Make it a mandatory step in your pipeline
+2. **Normalize early**: Do it right after loading, before any analysis
+3. **Normalize once**: The operation is idempotent but shouldn't be called repeatedly
+4. **Document platform**: Keep track of which platform's normalization was applied
+
+```python
+import vroomrs
+
+class ProfileProcessor:
+    def __init__(self, platform: str):
+        self.platform = platform
+    
+    def load_and_prepare(self, data: str):
+        """Load and normalize in one step."""
+        profile = vroomrs.profile_from_json_str(data, platform=self.platform)
+        profile.normalize()  # Always normalize
+        return profile
+```

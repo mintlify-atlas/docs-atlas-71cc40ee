@@ -1,0 +1,74 @@
+---
+title: decompress_profile
+description: Decompress an LZ4-encoded profile into a Profile instance
+---
+
+## Overview
+
+Decompresses an LZ4-encoded transaction profile and returns a `Profile` object. This function is used to deserialize compressed transaction profiling data that has been previously compressed using the `Profile.compress()` method.
+
+## Signature
+
+```python
+def decompress_profile(profile: bytes) -> Profile
+```
+
+## Parameters
+
+<ParamField path="profile" type="bytes" required>
+  A transaction profile that has been compressed with LZ4 encoding.
+</ParamField>
+
+## Returns
+
+<ResponseField name="return" type="Profile">
+  A `Profile` instance containing the decompressed profile data.
+</ResponseField>
+
+## Raises
+
+<ResponseField name="ValueError" type="Exception">
+  Raised if an error occurs during the decompression or deserialization process, such as corrupted LZ4 data or invalid profile format.
+</ResponseField>
+
+## Example
+
+```python
+import vroomrs
+
+# Read compressed profile from file
+with open("profile_compressed.lz4", "rb") as binary_file:
+    compressed_data = binary_file.read()
+
+# Decompress the profile
+profile = vroomrs.decompress_profile(compressed_data)
+
+# Access profile data
+print(f"Profile ID: {profile.get_profile_id()}")
+print(f"Platform: {profile.get_platform()}")
+print(f"Duration: {profile.duration_ns()}ns")
+print(f"Timestamp: {profile.get_timestamp()}")
+
+# Get transaction information
+transaction = profile.get_transaction()
+print(f"Transaction: {transaction.name}")
+print(f"Trace ID: {transaction.trace_id}")
+
+# Find performance issues
+occurrences = profile.find_occurrences()
+occurrences.filter_none_type_issues()
+
+for occurrence in occurrences.occurrences:
+    print(f"Issue: {occurrence.get_issue_title()}")
+    print(f"Culprit: {occurrence.get_culprit()}")
+    print(f"Duration: {occurrence.get_duration_ns()}ns")
+```
+
+## Notes
+
+- This function is the counterpart to `Profile.compress()`
+- Use this for decompressing transaction-based profile data
+- For continuous profiling chunks, use [`decompress_profile_chunk`](/api/decompress-profile-chunk) instead
+- The LZ4 compression format is specifically chosen for high-performance decompression
+- Ensure the input data is valid LZ4-compressed profile data to avoid errors
+- After decompression, you may want to call `profile.normalize()` to apply platform-specific normalization

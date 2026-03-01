@@ -1,0 +1,69 @@
+---
+title: decompress_profile_chunk
+description: Decompress an LZ4-encoded profile chunk into a ProfileChunk instance
+---
+
+## Overview
+
+Decompresses an LZ4-encoded profile chunk and returns a `ProfileChunk` object. This function is used to deserialize compressed continuous profiling data that has been previously compressed using the `ProfileChunk.compress()` method.
+
+## Signature
+
+```python
+def decompress_profile_chunk(profile: bytes) -> ProfileChunk
+```
+
+## Parameters
+
+<ParamField path="profile" type="bytes" required>
+  A profile chunk that has been compressed with LZ4 encoding.
+</ParamField>
+
+## Returns
+
+<ResponseField name="return" type="ProfileChunk">
+  A `ProfileChunk` instance containing the decompressed profile data.
+</ResponseField>
+
+## Raises
+
+<ResponseField name="ValueError" type="Exception">
+  Raised if an error occurs during the decompression or deserialization process, such as corrupted LZ4 data or invalid profile format.
+</ResponseField>
+
+## Example
+
+```python
+import vroomrs
+
+# Read compressed profile chunk from file
+with open("profile_chunk_compressed.lz4", "rb") as binary_file:
+    compressed_data = binary_file.read()
+
+# Decompress the profile chunk
+profile_chunk = vroomrs.decompress_profile_chunk(compressed_data)
+
+# Access profile chunk data
+print(f"Profiler ID: {profile_chunk.get_profiler_id()}")
+print(f"Platform: {profile_chunk.get_platform()}")
+print(f"Duration: {profile_chunk.duration_ms()}ms")
+print(f"Start: {profile_chunk.start_timestamp()}")
+print(f"End: {profile_chunk.end_timestamp()}")
+
+# Extract function metrics
+metrics = profile_chunk.extract_functions_metrics(
+    min_depth=2,
+    filter_system_frames=True,
+    max_unique_functions=50
+)
+
+print(f"Found {len(metrics)} unique functions")
+```
+
+## Notes
+
+- This function is the counterpart to `ProfileChunk.compress()`
+- Use this for decompressing continuous profiling chunk data
+- For transaction profiles, use [`decompress_profile`](/api/decompress-profile) instead
+- The LZ4 compression format is specifically chosen for high-performance decompression
+- Ensure the input data is valid LZ4-compressed profile data to avoid errors

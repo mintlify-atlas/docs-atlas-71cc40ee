@@ -1,0 +1,162 @@
+---
+title: Installation
+description: Install vroomrs via pip to start processing and analyzing profiles
+---
+
+# Installation
+
+vroomrs is published to PyPI and can be installed using pip. The package includes pre-built wheels for common platforms, so installation is straightforward.
+
+## Requirements
+
+<Info>
+vroomrs requires **Python 3.8 or higher**.
+</Info>
+
+The library is built using PyO3 and maturin, and includes pre-compiled binaries for:
+- Linux (x86_64, aarch64)
+- macOS (Intel and Apple Silicon)
+- Windows (x86_64)
+
+## Install via pip
+
+<Steps>
+  <Step title="Install the package">
+    Install vroomrs using pip:
+
+    ```bash
+    pip install vroomrs
+    ```
+
+    This will download and install the latest version from PyPI.
+  </Step>
+
+  <Step title="Verify installation">
+    Verify that vroomrs is installed correctly:
+
+    ```python
+    import vroomrs
+
+    # Check that the module is available
+    print("vroomrs installed successfully!")
+
+    # You can also check available functions
+    print(dir(vroomrs))
+    ```
+
+    You should see output listing the available classes and functions:
+
+    ```
+    vroomrs installed successfully!
+    ['CallTreeFunction', 'Profile', 'ProfileChunk', 'decompress_profile', 
+     'decompress_profile_chunk', 'profile_from_json_str', 
+     'profile_chunk_from_json_str', ...]
+    ```
+  </Step>
+
+  <Step title="Test with a simple example">
+    Try loading a profile from JSON:
+
+    ```python
+    import vroomrs
+    import json
+
+    # Example profile data (you'll need actual profile JSON)
+    profile_json = '{...}'  # Your profile JSON string
+
+    # Load the profile
+    profile = vroomrs.profile_from_json_str(profile_json)
+    print(f"Profile loaded: {profile.get_profile_id()}")
+    ```
+  </Step>
+</Steps>
+
+## Development installation
+
+If you want to develop vroomrs or build from source, you'll need additional tools.
+
+<Warning>
+Most users should use the pip installation above. Only build from source if you need to modify vroomrs or contribute to its development.
+</Warning>
+
+### Development requirements
+
+To build vroomrs from source, you need:
+
+- **Rust**: Install from [rustup.rs](https://rustup.rs/)
+- **Python 3.8+**: With pip installed
+- **maturin**: The build tool for PyO3 projects
+- **make**: For running build commands
+
+### Building from source
+
+<Steps>
+  <Step title="Clone the repository">
+    ```bash
+    git clone https://github.com/getsentry/vroomrs.git
+    cd vroomrs
+    ```
+  </Step>
+
+  <Step title="Install development dependencies">
+    ```bash
+    pip install maturin
+    ```
+  </Step>
+
+  <Step title="Build the extension">
+    ```bash
+    make build
+    ```
+
+    Or using maturin directly:
+
+    ```bash
+    maturin develop
+    ```
+  </Step>
+
+  <Step title="Run tests">
+    ```bash
+    make test
+    ```
+  </Step>
+</Steps>
+
+### Setting up pre-commit hooks
+
+If you're contributing to vroomrs:
+
+```bash
+# Install pre-commit
+pip install pre-commit
+
+# Set up git hooks
+pre-commit install
+```
+
+## Troubleshooting
+
+### Import errors
+
+If you see `ImportError: No module named 'vroomrs'`:
+
+1. Verify Python version: `python --version` (must be 3.8+)
+2. Check installation: `pip show vroomrs`
+3. Try reinstalling: `pip install --force-reinstall vroomrs`
+
+### Platform-specific issues
+
+<Tip>
+If you encounter platform-specific build errors, ensure you have the latest version of pip:
+
+```bash
+pip install --upgrade pip
+```
+</Tip>
+
+For Apple Silicon Macs, make sure you're using a native Python installation (not running under Rosetta).
+
+## Next steps
+
+Now that you have vroomrs installed, check out the [quickstart guide](/quickstart) to learn how to use it.

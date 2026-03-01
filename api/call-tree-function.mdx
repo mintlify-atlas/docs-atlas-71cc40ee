@@ -1,0 +1,294 @@
+---
+title: CallTreeFunction
+description: Function metrics extracted from profiling call trees
+---
+
+## Overview
+
+The `CallTreeFunction` class represents function metrics extracted from a profiling call tree. It contains detailed performance information about individual functions, including timing data, sample counts, and call tree position.
+
+Instances of `CallTreeFunction` are obtained by calling [`extract_functions_metrics()`](/api/profile/methods) on a `Profile` or `ProfileChunk` object.
+
+## Getting instances
+
+`CallTreeFunction` objects are returned from the `extract_functions_metrics()` method:
+
+```python
+import vroomrs
+
+# Load a profile
+profile = vroomrs.profile_from_json_str(profile_json)
+
+# Extract function metrics
+metrics = profile.extract_functions_metrics(
+    min_depth=1,
+    filter_system_frames=True,
+    max_unique_functions=100,
+    filter_non_leaf_functions=True
+)
+
+# Each item in metrics is a CallTreeFunction instance
+for func in metrics:
+    print(f"{func.get_function()}: {func.get_sum_self_time_ns()}ns")
+```
+
+## Understanding metrics
+
+### Self time vs total time
+
+- **Self time**: Time spent executing code directly in the function (excluding time in called functions)
+- **Total time**: Total time spent in the function including all descendant calls
+
+For application functions, self time only considers time spent in other application functions. System function calls don't affect the self time of application functions.
+
+### Sample count
+
+The number of profiling samples where this function appeared in the call stack. Higher sample counts indicate more time spent in the function.
+
+### Depth
+
+The depth of the function in the call tree (0 = root). Only available when `generate_stack_fingerprints=True`.
+
+## Methods
+
+### get_function()
+
+Returns the function name.
+
+<ResponseField name="return" type="str">
+  The function name
+</ResponseField>
+
+```python
+func_name = function.get_function()
+print(func_name)  # e.g., "processData"
+```
+
+### get_package()
+
+Returns the package or module name containing the function.
+
+<ResponseField name="return" type="str">
+  The package name
+</ResponseField>
+
+```python
+package = function.get_package()
+print(package)  # e.g., "com.example.app"
+```
+
+### get_in_app()
+
+Returns whether the function is application code or system/library code.
+
+<ResponseField name="return" type="bool">
+  `True` if the function is application code, `False` if it's system code
+</ResponseField>
+
+```python
+if function.get_in_app():
+    print("Application code")
+else:
+    print("System/library code")
+```
+
+### get_self_times_ns()
+
+Returns a list of self-time measurements in nanoseconds for each occurrence of this function.
+
+<ResponseField name="return" type="list[int]">
+  List of self times in nanoseconds
+</ResponseField>
+
+```python
+self_times = function.get_self_times_ns()
+print(f"Occurred {len(self_times)} times")
+print(f"Average self time: {sum(self_times) / len(self_times)}ns")
+```
+
+### get_sum_self_time_ns()
+
+Returns the total self time across all occurrences in nanoseconds.
+
+<ResponseField name="return" type="int">
+  Sum of all self times in nanoseconds
+</ResponseField>
+
+```python
+total_self_time = function.get_sum_self_time_ns()
+print(f"Total self time: {total_self_time / 1e6}ms")
+```
+
+### get_total_times_ns()
+
+Returns a list of total time measurements in nanoseconds for each occurrence.
+
+<ResponseField name="return" type="list[int]">
+  List of total times in nanoseconds
+</ResponseField>
+
+```python
+total_times = function.get_total_times_ns()
+for i, total_time in enumerate(total_times):
+    print(f"Occurrence {i}: {total_time / 1e6}ms total")
+```
+
+### get_sample_count()
+
+Returns the number of profiling samples where this function appeared.
+
+<ResponseField name="return" type="int">
+  The sample count
+</ResponseField>
+
+```python
+samples = function.get_sample_count()
+print(f"Found in {samples} samples")
+```
+
+### get_thread_id()
+
+Returns the thread ID where this function had the maximum duration.
+
+<ResponseField name="return" type="str">
+  The thread ID
+</ResponseField>
+
+```python
+thread = function.get_thread_id()
+print(f"Max duration on thread: {thread}")
+```
+
+### get_max_duration()
+
+Returns the maximum self-time duration in nanoseconds across all occurrences.
+
+<ResponseField name="return" type="int">
+  Maximum duration in nanoseconds
+</ResponseField>
+
+```python
+max_duration = function.get_max_duration()
+print(f"Slowest execution: {max_duration / 1e6}ms")
+```
+
+### get_depth()
+
+Returns the depth of the function in the call tree.
+
+<ResponseField name="return" type="int | None">
+  Depth in the call tree (0 = root), or `None` if `generate_stack_fingerprints` was not enabled
+</ResponseField>
+
+```python
+depth = function.get_depth()
+if depth is not None:
+    print(f"Call tree depth: {depth}")
+```
+
+### get_fingerprint()
+
+Returns the function fingerprint used for aggregation.
+
+<ResponseField name="return" type="int">
+  The fingerprint of the function
+</ResponseField>
+
+```python
+fingerprint = function.get_fingerprint()
+print(f"Fingerprint: {fingerprint}")
+```
+
+### get_parent_fingerprint()
+
+Returns the parent function's fingerprint when stack fingerprinting is enabled.
+
+<ResponseField name="return" type="int | None">
+  Parent fingerprint if `generate_stack_fingerprints=True`, otherwise `None`. When `filter_system_frames=True`, returns the fingerprint of the closest application frame.
+</ResponseField>
+
+```python
+parent = function.get_parent_fingerprint()
+if parent is not None:
+    print(f"Parent fingerprint: {parent}")
+```
+
+### get_stack_fingerprint()
+
+Returns the stack fingerprint up to the current function.
+
+<ResponseField name="return" type="int | None">
+  Stack fingerprint if `generate_stack_fingerprints=True`, otherwise `None`
+</ResponseField>
+
+```python
+stack_fp = function.get_stack_fingerprint()
+if stack_fp is not None:
+    print(f"Stack fingerprint: {stack_fp}")
+```
+
+## Example: Analyzing slowest functions
+
+```python
+import vroomrs
+
+# Load profile
+profile = vroomrs.profile_from_json_str(profile_json)
+
+# Extract function metrics
+metrics = profile.extract_functions_metrics(
+    min_depth=1,
+    filter_system_frames=True,
+    max_unique_functions=50,
+    filter_non_leaf_functions=True
+)
+
+# Sort by total self time to find slowest functions
+metrics_sorted = sorted(
+    metrics,
+    key=lambda f: f.get_sum_self_time_ns(),
+    reverse=True
+)
+
+# Analyze top 10 slowest functions
+profile_duration = profile.duration_ns()
+
+for i, func in enumerate(metrics_sorted[:10], 1):
+    self_time_ns = func.get_sum_self_time_ns()
+    percentage = (self_time_ns / profile_duration) * 100
+    
+    print(f"{i}. {func.get_package()}.{func.get_function()}")
+    print(f"   Self time: {self_time_ns / 1e6:.2f}ms ({percentage:.1f}%)")
+    print(f"   Samples: {func.get_sample_count()}")
+    print(f"   Max duration: {func.get_max_duration() / 1e6:.2f}ms")
+    print(f"   In-app: {func.get_in_app()}")
+    print()
+```
+
+## Example: Building a flame graph
+
+```python
+import vroomrs
+
+# Extract with stack fingerprints to preserve call hierarchy
+metrics = profile.extract_functions_metrics(
+    min_depth=0,
+    filter_system_frames=False,
+    filter_non_leaf_functions=False,
+    generate_stack_fingerprints=True
+)
+
+# Build parent-child relationships
+by_fingerprint = {}
+for func in metrics:
+    stack_fp = func.get_stack_fingerprint()
+    if stack_fp is not None:
+        by_fingerprint[stack_fp] = func
+
+# Create flame graph data
+for func in metrics:
+    parent_fp = func.get_parent_fingerprint()
+    if parent_fp and parent_fp in by_fingerprint:
+        parent = by_fingerprint[parent_fp]
+        print(f"{parent.get_function()} -> {func.get_function()}")
+```

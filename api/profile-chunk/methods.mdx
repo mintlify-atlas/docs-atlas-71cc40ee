@@ -1,0 +1,360 @@
+---
+title: 'ProfileChunk methods'
+description: 'Complete reference for ProfileChunk class methods'
+---
+
+This page documents all methods available on the ProfileChunk class.
+
+## Core methods
+
+### normalize()
+
+Applies various normalization steps to the profile chunk based on the platform.
+
+```python
+profile_chunk.normalize()
+```
+
+Normalization includes platform-specific processing to ensure consistent data format and quality. This should typically be called after loading a profile chunk and before analysis.
+
+**Example:**
+
+```python
+import vroomrs
+
+chunk = vroomrs.profile_chunk_from_json_str(json_data)
+chunk.normalize()  # Prepare chunk for analysis
+```
+
+### extract_functions_metrics()
+
+Extracts function-level performance metrics from the profile chunk by analyzing the call tree.
+
+<ParamField path="min_depth" type="int" required>
+  The minimum depth of nodes to include. Set to 1 to ignore root frames, 2 to ignore root and first-level frames, etc.
+</ParamField>
+
+<ParamField path="filter_system_frames" type="bool" required>
+  If `True`, filters out system frames like standard library calls, keeping only application code.
+</ParamField>
+
+<ParamField path="max_unique_functions" type="int" optional>
+  Maximum number of unique functions to return. Returns the top N slowest functions. If `None`, returns all functions.
+</ParamField>
+
+<ParamField path="filter_non_leaf_functions" type="bool" default="True">
+  If `True`, filters out functions with zero self-time (non-leaf functions). Set to `False` to include all functions.
+</ParamField>
+
+<ParamField path="generate_stack_fingerprints" type="bool" default="False">
+  If `True`, generates fingerprints for the full stack trace up to each function and parent function fingerprints.
+</ParamField>
+
+<ResponseField name="return" type="list[CallTreeFunction]">
+  A list of CallTreeFunction objects containing metrics for each function in the call tree.
+</ResponseField>
+
+**Example:**
+
+```python
+# Get top 10 slowest application functions
+metrics = chunk.extract_functions_metrics(
+    min_depth=2,
+    filter_system_frames=True,
+    max_unique_functions=10
+)
+
+for metric in metrics:
+    function_name = metric.get_function()
+    self_time = metric.get_sum_self_time_ns()
+    sample_count = metric.get_sample_count()
+    print(f"{function_name}: {self_time}ns ({sample_count} samples)")
+```
+
+**Example with stack fingerprints:**
+
+```python
+# Include all functions with stack fingerprints
+metrics = chunk.extract_functions_metrics(
+    min_depth=1,
+    filter_system_frames=False,
+    filter_non_leaf_functions=False,
+    generate_stack_fingerprints=True
+)
+
+for metric in metrics:
+    print(f"Function: {metric.get_function()}")
+    print(f"Fingerprint: {metric.get_fingerprint()}")
+    print(f"Stack fingerprint: {metric.get_stack_fingerprint()}")
+    print(f"Parent fingerprint: {metric.get_parent_fingerprint()}")
+```
+
+### compress()
+
+Compresses the profile chunk using LZ4 compression.
+
+<ResponseField name="return" type="bytes">
+  The LZ4-compressed profile chunk as bytes.
+</ResponseField>
+
+**Example:**
+
+```python
+import vroomrs
+
+chunk = vroomrs.profile_chunk_from_json_str(json_data)
+compressed = chunk.compress()
+
+# Save compressed chunk
+with open("profile_chunk.lz4", "wb") as f:
+    f.write(compressed)
+```
+
+## Metadata methods
+
+### get_chunk_id()
+
+Returns the unique identifier for this profile chunk.
+
+<ResponseField name="return" type="str">
+  The profile chunk ID.
+</ResponseField>
+
+**Example:**
+
+```python
+chunk_id = chunk.get_chunk_id()
+print(f"Processing chunk: {chunk_id}")
+```
+
+### get_profiler_id()
+
+Returns the profiler ID associated with this profile chunk.
+
+<ResponseField name="return" type="str">
+  The profiler ID.
+</ResponseField>
+
+**Example:**
+
+```python
+profiler_id = chunk.get_profiler_id()
+```
+
+### get_organization_id()
+
+Returns the organization ID that owns this profile chunk.
+
+<ResponseField name="return" type="int">
+  The organization ID.
+</ResponseField>
+
+**Example:**
+
+```python
+org_id = chunk.get_organization_id()
+```
+
+### get_project_id()
+
+Returns the project ID this profile chunk belongs to.
+
+<ResponseField name="return" type="int">
+  The project ID.
+</ResponseField>
+
+**Example:**
+
+```python
+project_id = chunk.get_project_id()
+```
+
+### get_platform()
+
+Returns the platform this profile was collected from.
+
+<ResponseField name="return" type="str">
+  The platform name (e.g., "python", "cocoa", "android").
+</ResponseField>
+
+**Example:**
+
+```python
+platform = chunk.get_platform()
+print(f"Platform: {platform}")
+```
+
+### get_environment()
+
+Returns the environment name where this profile was collected.
+
+<ResponseField name="return" type="str | None">
+  The environment name, or `None` if not available.
+</ResponseField>
+
+**Example:**
+
+```python
+env = chunk.get_environment()
+if env:
+    print(f"Environment: {env}")
+```
+
+### get_release()
+
+Returns the release version of the application.
+
+<ResponseField name="return" type="str | None">
+  The release version, or `None` if not available.
+</ResponseField>
+
+**Example:**
+
+```python
+release = chunk.get_release()
+if release:
+    print(f"Release: {release}")
+```
+
+## Timing methods
+
+### duration_ms()
+
+Returns the duration of the profile chunk in milliseconds.
+
+<ResponseField name="return" type="int">
+  The duration in milliseconds.
+</ResponseField>
+
+**Example:**
+
+```python
+duration = chunk.duration_ms()
+print(f"Chunk duration: {duration}ms")
+```
+
+### start_timestamp()
+
+Returns the start timestamp of the profile chunk as a Unix timestamp with millisecond precision.
+
+<ResponseField name="return" type="float">
+  The start timestamp in seconds with millisecond precision.
+</ResponseField>
+
+**Example:**
+
+```python
+import datetime
+
+start = chunk.start_timestamp()
+start_dt = datetime.datetime.fromtimestamp(start)
+print(f"Started at: {start_dt}")
+```
+
+### end_timestamp()
+
+Returns the end timestamp of the profile chunk as a Unix timestamp with millisecond precision.
+
+<ResponseField name="return" type="float">
+  The end timestamp in seconds with millisecond precision.
+</ResponseField>
+
+**Example:**
+
+```python
+import datetime
+
+end = chunk.end_timestamp()
+end_dt = datetime.datetime.fromtimestamp(end)
+print(f"Ended at: {end_dt}")
+```
+
+### get_timestamp()
+
+Returns the timestamp when the profile chunk was collected.
+
+<ResponseField name="return" type="float">
+  Unix timestamp in seconds with millisecond precision.
+</ResponseField>
+
+**Note:** This method is available but deprecated. Use `start_timestamp()` instead for ProfileChunk.
+
+### get_received()
+
+Returns the timestamp when the profile chunk was received by the server.
+
+<ResponseField name="return" type="float">
+  The received timestamp.
+</ResponseField>
+
+**Example:**
+
+```python
+received = chunk.get_received()
+```
+
+### get_retention_days()
+
+Returns the number of days this profile chunk will be retained.
+
+<ResponseField name="return" type="int">
+  The retention period in days.
+</ResponseField>
+
+**Example:**
+
+```python
+retention = chunk.get_retention_days()
+print(f"Will be retained for {retention} days")
+```
+
+## SDK information methods
+
+### sdk_name()
+
+Returns the name of the SDK used to collect this profile chunk.
+
+<ResponseField name="return" type="str | None">
+  The SDK name, or `None` if not available.
+</ResponseField>
+
+**Example:**
+
+```python
+sdk = chunk.sdk_name()
+if sdk:
+    print(f"SDK: {sdk}")
+```
+
+### sdk_version()
+
+Returns the version of the SDK used to collect this profile chunk.
+
+<ResponseField name="return" type="str | None">
+  The SDK version, or `None` if not available.
+</ResponseField>
+
+**Example:**
+
+```python
+version = chunk.sdk_version()
+if version:
+    print(f"SDK version: {version}")
+```
+
+## Storage methods
+
+### storage_path()
+
+Returns the storage path where this profile chunk should be stored.
+
+<ResponseField name="return" type="str">
+  The storage path.
+</ResponseField>
+
+**Example:**
+
+```python
+path = chunk.storage_path()
+print(f"Storage path: {path}")
+```

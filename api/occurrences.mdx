@@ -1,0 +1,429 @@
+---
+title: Occurrence
+description: Performance issues detected in profiling data
+---
+
+## Overview
+
+The `Occurrence` class represents a detected performance issue in a profile. Each occurrence identifies a specific performance problem such as slow operations on the main thread, frame drops, or inefficient code patterns.
+
+Instances of `Occurrence` are obtained by calling [`find_occurrences()`](/api/profile/methods) on a `Profile` object.
+
+## Getting instances
+
+`Occurrence` objects are returned from the `find_occurrences()` method:
+
+```python
+import vroomrs
+
+# Load a profile
+profile = vroomrs.profile_from_json_str(profile_json)
+
+# Find performance issues
+occurrences = profile.find_occurrences()
+
+# Filter out NONE_TYPE issues
+occurrences.filter_none_type_issues()
+
+# Access individual occurrences
+for occurrence in occurrences.occurrences:
+    print(f"{occurrence.get_issue_title()}: {occurrence.get_subtitle()}")
+```
+
+## Types of performance issues
+
+Vroomrs detects various categories of performance issues:
+
+### Main thread blocking
+- **File I/O on main thread**: Reading or writing files
+- **Network I/O on main thread**: HTTP requests or network operations
+- **Database operations on main thread**: SQL queries or Core Data operations
+
+### Data processing
+- **JSON decoding/encoding**: Slow JSON serialization
+- **Image decoding/encoding**: Image processing operations
+- **Compression/decompression**: Data compression operations
+- **Base64 encoding/decoding**: Base64 operations
+
+### Platform-specific
+- **SwiftUI issues**: View inflation, layout, rendering, or update slowness
+- **Core Data operations**: Object context operations
+- **Regex operations**: Regular expression matching
+- **ML operations**: Machine learning model loading or inference
+
+### Frame performance
+- **Frame drops**: Frames that took too long to render, causing dropped frames
+
+## Methods
+
+### get_culprit()
+
+Returns the transaction name where the issue occurred.
+
+<ResponseField name="return" type="str">
+  The name of the transaction or main operation where the issue occurred
+</ResponseField>
+
+```python
+transaction = occurrence.get_culprit()
+print(f"Issue in transaction: {transaction}")
+```
+
+### get_type()
+
+Returns the numeric issue type identifier.
+
+<ResponseField name="return" type="int">
+  Numeric type identifier for the issue category
+</ResponseField>
+
+```python
+issue_type = occurrence.get_type()
+if issue_type == 2003:  # JSON_DECODE_TYPE
+    print("JSON decoding issue")
+```
+
+### get_category()
+
+Returns the category name for the performance issue.
+
+<ResponseField name="return" type="str">
+  Category name (e.g., "json_decode", "image_decode", "file_read")
+</ResponseField>
+
+```python
+category = occurrence.get_category()
+print(f"Issue category: {category}")
+```
+
+### get_issue_title()
+
+Returns a human-readable title describing the issue type.
+
+<ResponseField name="return" type="str">
+  Human-readable title (e.g., "JSON Decoding on Main Thread")
+</ResponseField>
+
+```python
+title = occurrence.get_issue_title()
+print(title)
+```
+
+### get_subtitle()
+
+Returns a brief description, usually the function name where the issue occurred.
+
+<ResponseField name="return" type="str">
+  Brief description, typically the function name
+</ResponseField>
+
+```python
+subtitle = occurrence.get_subtitle()
+print(f"In function: {subtitle}")
+```
+
+### get_level()
+
+Returns the severity level of the issue.
+
+<ResponseField name="return" type="str">
+  Severity level ("info", "warning", or "error")
+</ResponseField>
+
+```python
+level = occurrence.get_level()
+if level == "error":
+    print("High severity issue")
+```
+
+### get_fingerprint()
+
+Returns unique identifiers for grouping similar issues.
+
+<ResponseField name="return" type="list[str]">
+  List of fingerprint strings for issue grouping
+</ResponseField>
+
+```python
+fingerprints = occurrence.get_fingerprint()
+print(f"Issue fingerprint: {fingerprints[0]}")
+```
+
+### get_duration_ns()
+
+Returns the duration of the problematic operation in nanoseconds.
+
+<ResponseField name="return" type="int">
+  Duration in nanoseconds
+</ResponseField>
+
+```python
+duration_ns = occurrence.get_duration_ns()
+print(f"Operation took {duration_ns / 1e6:.2f}ms")
+```
+
+### get_sample_count()
+
+Returns the number of samples where this issue was detected.
+
+<ResponseField name="return" type="int">
+  Number of samples
+</ResponseField>
+
+```python
+samples = occurrence.get_sample_count()
+print(f"Detected in {samples} samples")
+```
+
+### get_evidence_display()
+
+Returns human-readable evidence for displaying the issue.
+
+<ResponseField name="return" type="list[Evidence]">
+  List of `Evidence` objects containing name, value, and importance
+</ResponseField>
+
+```python
+evidence_list = occurrence.get_evidence_display()
+for evidence in evidence_list:
+    print(f"{evidence.get_name()}: {evidence.get_value()}")
+```
+
+### get_evidence_data()
+
+Returns structured data about the performance issue.
+
+<ResponseField name="return" type="EvidenceData">
+  Structured evidence data object
+</ResponseField>
+
+```python
+evidence = occurrence.get_evidence_data()
+print(f"Frame duration: {evidence.get_frame_duration_ns()}ns")
+print(f"Function: {evidence.get_frame_name()}")
+print(f"Package: {evidence.get_frame_package()}")
+```
+
+### get_event()
+
+Returns the event data including platform, stack trace, and debug information.
+
+<ResponseField name="return" type="Event">
+  Event data object
+</ResponseField>
+
+```python
+event = occurrence.get_event()
+print(f"Platform: {event.platform}")
+print(f"Event ID: {event.event_id}")
+```
+
+### get_detection_time()
+
+Returns when the issue was detected in RFC 3339 format.
+
+<ResponseField name="return" type="str">
+  Detection timestamp in RFC 3339 format
+</ResponseField>
+
+```python
+detection_time = occurrence.get_detection_time()
+print(f"Detected at: {detection_time}")
+```
+
+### get_id()
+
+Returns the unique identifier for this specific occurrence.
+
+<ResponseField name="return" type="str">
+  Unique occurrence ID
+</ResponseField>
+
+```python
+occurrence_id = occurrence.get_id()
+print(f"Occurrence ID: {occurrence_id}")
+```
+
+### get_project_id()
+
+Returns the project ID where the issue was detected.
+
+<ResponseField name="return" type="int">
+  Project ID
+</ResponseField>
+
+```python
+project = occurrence.get_project_id()
+print(f"Project: {project}")
+```
+
+### get_resource_id()
+
+Returns an optional resource identifier.
+
+<ResponseField name="return" type="str | None">
+  Resource identifier or `None` if not available
+</ResponseField>
+
+```python
+resource = occurrence.get_resource_id()
+if resource:
+    print(f"Resource: {resource}")
+```
+
+### get_payload_type()
+
+Returns the payload type, typically "occurrence".
+
+<ResponseField name="return" type="str">
+  Type of payload
+</ResponseField>
+
+```python
+payload_type = occurrence.get_payload_type()
+# Usually returns "occurrence"
+```
+
+### to_json_str()
+
+Serializes the occurrence to a JSON string.
+
+<ResponseField name="return" type="str">
+  JSON string representation of the occurrence
+</ResponseField>
+
+<ParamField name="raises" type="ValueError">
+  If serialization fails due to invalid data
+</ParamField>
+
+```python
+json_str = occurrence.to_json_str()
+with open("occurrence.json", "w") as f:
+    f.write(json_str)
+```
+
+## Evidence data structure
+
+The `EvidenceData` object provides detailed information about the performance issue:
+
+```python
+evidence = occurrence.get_evidence_data()
+
+# Duration and timing
+frame_duration = evidence.get_frame_duration_ns()
+profile_duration = evidence.get_profile_duration_ns()
+
+# Function information
+func_name = evidence.get_frame_name()
+func_module = evidence.get_frame_module()
+func_package = evidence.get_frame_package()
+
+# Transaction context
+transaction_id = evidence.get_transaction_id()
+transaction_name = evidence.get_transaction_name()
+
+# Profile metadata
+profile_id = evidence.get_profile_id()
+template = evidence.get_template_name()
+sample_count = evidence.get_sample_count()
+```
+
+## Example: Detecting and reporting issues
+
+```python
+import vroomrs
+
+# Load profile
+profile = vroomrs.profile_from_json_str(profile_json)
+
+# Find all performance issues
+occurrences = profile.find_occurrences()
+occurrences.filter_none_type_issues()
+
+if len(occurrences.occurrences) == 0:
+    print("No performance issues detected")
+else:
+    print(f"Found {len(occurrences.occurrences)} performance issues:\n")
+    
+    # Group by category
+    by_category = {}
+    for occ in occurrences.occurrences:
+        category = occ.get_category()
+        if category not in by_category:
+            by_category[category] = []
+        by_category[category].append(occ)
+    
+    # Report each category
+    for category, occs in by_category.items():
+        print(f"\n{category.upper()} ({len(occs)} occurrences):")
+        print("=" * 60)
+        
+        for occ in occs:
+            evidence = occ.get_evidence_data()
+            duration_ms = occ.get_duration_ns() / 1e6
+            
+            print(f"\n  {occ.get_issue_title()}")
+            print(f"  Function: {evidence.get_frame_name()}")
+            print(f"  Package: {evidence.get_frame_package()}")
+            print(f"  Duration: {duration_ms:.2f}ms")
+            print(f"  Samples: {occ.get_sample_count()}")
+            
+            # Show evidence
+            for ev in occ.get_evidence_display():
+                if ev.get_important():
+                    print(f"  {ev.get_name()}: {ev.get_value()}")
+```
+
+## Example: Filtering specific issue types
+
+```python
+import vroomrs
+
+profile = vroomrs.profile_from_json_str(profile_json)
+occurrences = profile.find_occurrences()
+occurrences.filter_none_type_issues()
+
+# Find only main thread blocking issues
+MAIN_THREAD_CATEGORIES = {
+    "file_read", "file_write", "http", "json_decode", 
+    "json_encode", "image_decode", "sql"
+}
+
+blocking_issues = [
+    occ for occ in occurrences.occurrences
+    if occ.get_category() in MAIN_THREAD_CATEGORIES
+]
+
+if blocking_issues:
+    print(f"Found {len(blocking_issues)} main thread blocking issues")
+    
+    # Sort by duration (most expensive first)
+    blocking_issues.sort(key=lambda o: o.get_duration_ns(), reverse=True)
+    
+    for occ in blocking_issues[:5]:  # Top 5
+        print(f"\n{occ.get_issue_title()}")
+        print(f"  {occ.get_subtitle()}")
+        print(f"  Duration: {occ.get_duration_ns() / 1e6:.2f}ms")
+```
+
+## Example: Exporting occurrences
+
+```python
+import vroomrs
+import json
+
+profile = vroomrs.profile_from_json_str(profile_json)
+occurrences = profile.find_occurrences()
+occurrences.filter_none_type_issues()
+
+# Export all occurrences to JSON
+occurrences_json = occurrences.to_json_str()
+with open("occurrences.json", "w") as f:
+    f.write(occurrences_json)
+
+# Or export individual occurrences
+for i, occ in enumerate(occurrences.occurrences):
+    occ_json = occ.to_json_str()
+    with open(f"occurrence_{i}.json", "w") as f:
+        f.write(occ_json)
+```

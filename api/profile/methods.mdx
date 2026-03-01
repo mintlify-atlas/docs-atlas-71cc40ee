@@ -1,0 +1,162 @@
+---
+title: Profile methods
+description: Core methods for analyzing and manipulating Profile objects
+---
+
+The Profile class provides methods for normalization, analysis, and data extraction.
+
+## normalize()
+
+Applies platform-specific normalization steps to the profile data.
+
+```python
+profile.normalize()
+```
+
+Normalization standardizes the profile structure depending on the platform (Android, iOS, Python, etc.) and prepares it for analysis.
+
+<ResponseField name="return" type="None">
+  This method modifies the profile in-place and returns nothing
+</ResponseField>
+
+## extract_functions_metrics()
+
+Extracts function-level performance metrics from the profile's call tree.
+
+```python
+metrics = profile.extract_functions_metrics(
+    min_depth=2,
+    filter_system_frames=True,
+    max_unique_functions=10,
+    filter_non_leaf_functions=False,
+    generate_stack_fingerprints=False
+)
+```
+
+This method analyzes the call tree and extracts metrics for each function, returning a list of `CallTreeFunction` objects sorted by self-time in descending order.
+
+<ParamField path="min_depth" type="int" required>
+  The minimum depth of the node in the call tree. When computing slowest functions, frames with depth less than `min_depth` are ignored (e.g., if `min_depth=1`, root frames are ignored)
+</ParamField>
+
+<ParamField path="filter_system_frames" type="bool" required>
+  If `True`, system frames (e.g., standard library calls) will be filtered out
+</ParamField>
+
+<ParamField path="max_unique_functions" type="int">
+  Optional maximum number of unique functions to extract. If provided, only the top `max_unique_functions` slowest functions will be returned. If `None`, all functions will be returned
+</ParamField>
+
+<ParamField path="filter_non_leaf_functions" type="bool" default="True">
+  If `True`, functions with zero self-time (non-leaf functions) will be filtered out. If `False`, all functions including non-leaf functions with zero self-time will be included
+</ParamField>
+
+<ParamField path="generate_stack_fingerprints" type="bool" default="False">
+  If `True`, the fingerprint of the stack up to the current function and the parent function's fingerprint will be generated
+</ParamField>
+
+<ResponseField name="return" type="list[CallTreeFunction]">
+  A list of CallTreeFunction objects, each containing metrics for a function in the call tree, sorted by self-time in descending order
+</ResponseField>
+
+**Example:**
+
+```python
+metrics = profile.extract_functions_metrics(
+    min_depth=2,
+    filter_system_frames=True,
+    max_unique_functions=10,
+    filter_non_leaf_functions=False
+)
+
+for function_metric in metrics:
+    print(f"Function: {function_metric.get_function()}")
+    print(f"Package: {function_metric.get_package()}")
+    print(f"Self time: {function_metric.get_sum_self_time_ns()}ns")
+    print(f"Sample count: {function_metric.get_sample_count()}")
+```
+
+**Raises:** Exception if an error occurs during the extraction process.
+
+## find_occurrences()
+
+Finds performance issues (occurrences) in the profile by analyzing the call tree.
+
+```python
+occurrences = profile.find_occurrences()
+```
+
+This method detects various performance issues such as:
+- Frame drops caused by main thread blocking
+- Slow operations on the main thread (e.g., I/O, compression, database operations)
+- SwiftUI performance issues (view inflation, layout, rendering)
+- Machine learning model operations
+- Other platform-specific performance patterns
+
+<ResponseField name="return" type="Occurrences">
+  An Occurrences object, a wrapper containing a list of Occurrence objects, each representing a detected performance issue
+</ResponseField>
+
+**Example:**
+
+```python
+occurrences = profile.find_occurrences()
+
+# Filter out non-issues
+occurrences.filter_none_type_issues()
+
+# Iterate through detected issues
+for occurrence in occurrences.occurrences:
+    print(f"Issue: {occurrence.get_issue_title()}")
+    print(f"Function: {occurrence.get_subtitle()}")
+    print(f"Duration: {occurrence.get_duration_ns()}ns")
+    print(f"Category: {occurrence.get_category()}")
+```
+
+**Raises:** Exception if an error occurs during the detection process.
+
+## compress()
+
+Compresses the profile using LZ4 compression.
+
+```python
+compressed_profile = profile.compress()
+```
+
+This method serializes the profile to JSON and then compresses it with LZ4, returning the bytes representing the LZ4 encoded profile.
+
+<ResponseField name="return" type="bytes">
+  A bytes object representing the LZ4 encoded profile
+</ResponseField>
+
+**Example:**
+
+```python
+compressed_profile = profile.compress()
+
+with open("profile_compressed.lz4", "wb+") as binary_file:
+    binary_file.write(compressed_profile)
+```
+
+**Raises:** Exception if an error occurs during compression.
+
+## is_sampled()
+
+Returns whether the profile is a sampled profile.
+
+```python
+is_sampled = profile.is_sampled()
+```
+
+<ResponseField name="return" type="bool">
+  True if the profile is sampled, False otherwise
+</ResponseField>
+
+**Example:**
+
+```python
+if profile.is_sampled():
+    print("This is a sampled profile")
+else:
+    print("This is an instrumented profile")
+```

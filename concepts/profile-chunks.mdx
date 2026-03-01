@@ -1,0 +1,344 @@
+---
+title: Profile chunks
+description: Deep dive into ProfileChunk for continuous and streaming profiling
+---
+
+## What are profile chunks?
+
+A `ProfileChunk` represents a time-bounded segment of profiling data in a continuous profiling system. Unlike transaction-based profiles that capture a single execution flow, chunks enable profiling applications over extended periods by dividing the data into manageable segments.
+
+## Architecture
+
+### Internal structure
+
+ProfileChunk uses Rust's trait object pattern to support multiple platform formats:
+
+```rust
+#[pyclass]
+pub struct ProfileChunk {
+    pub profile: Box<dyn ChunkInterface + Send + Sync>,
+}
+```
+
+The `ChunkInterface` trait (from `src/types.rs:79-108`) defines the contract that all chunk implementations must fulfill:
+
+```rust
+pub trait ChunkInterface {
+    fn get_environment(&self) -> Option<&str>;
+    fn get_chunk_id(&self) -> &str;
+    fn get_organization_id(&self) -> u64;
+    fn get_platform(&self) -> String;
+    fn get_profiler_id(&self) -> &str;
+    fn get_project_id(&self) -> u64;
+    fn get_received(&self) -> f64;
+    fn get_release(&self) -> Option<&str>;
+    fn get_retention_days(&self) -> i32;
+    fn call_trees(&mut self, active_thread_id: Option<&str>) 
+        -> Result<CallTreesStr<'_>, CallTreeError>;
+    fn duration_ms(&self) -> u64;
+    fn end_timestamp(&self) -> f64;
+    fn start_timestamp(&self) -> f64;
+    fn sdk_name(&self) -> Option<&str>;
+    fn sdk_version(&self) -> Option<&str>;
+    fn storage_path(&self) -> String;
+    fn normalize(&mut self);
+    fn to_json_vec(&self) -> Result<Vec<u8>, serde_json::Error>;
+    fn as_any(&self) -> &dyn Any;
+}
+```
+
+### Chunk identifiers
+
+Every ProfileChunk has two key identifiers:
+
+1. **Chunk ID**: Unique identifier for this specific time segment
+2. **Profiler ID**: Identifier for the profiling session this chunk belongs to
+
+Together, these allow you to reconstruct a complete profiling timeline from multiple chunks.
+
+```python
+import vroomrs
+
+chunk = vroomrs.profile_chunk_from_json_str(data)
+print(f"Chunk: {chunk.get_chunk_id()}")
+print(f"Session: {chunk.get_profiler_id()}")
+```
+
+## Creating profile chunks
+
+### From JSON string
+
+The most common way to create a ProfileChunk is from a JSON string:
+
+```python
+import vroomrs
+
+# Automatic platform detection
+chunk = vroomrs.profile_chunk_from_json_str(json_string)
+
+# Explicit platform (recommended for performance)
+chunk = vroomrs.profile_chunk_from_json_str(
+    json_string,
+    platform="cocoa"
+)
+```
+
+<Note>
+Passing the platform explicitly is more efficient because it skips the version field detection step and deserializes directly to the correct format.
+</Note>
+
+### From compressed data
+
+ProfileChunks can be loaded directly from LZ4-compressed data:
+
+```python
+import vroomrs
+
+with open("profile_chunk.lz4", "rb") as f:
+    compressed_data = f.read()
+    chunk = vroomrs.decompress_profile_chunk(compressed_data)
+```
+
+The decompression implementation (from `src/profile_chunk.rs:63-67`):
+
+```rust
+pub(crate) fn decompress(source: &[u8]) -> Result<Self, Box<dyn std::error::Error>> {
+    let bytes = decompress_lz4(source)?;
+    Self::from_json_vec(bytes.as_ref())
+        .map_err(|err| Box::new(err) as Box<dyn std::error::Error>)
+}
+```
+
+## Time boundaries
+
+Unlike `Profile`, which has a single timestamp representing the end of the transaction, `ProfileChunk` has explicit time boundaries:
+
+```python
+chunk = vroomrs.profile_chunk_from_json_str(data)
+
+# Time range for this chunk
+start = chunk.start_timestamp()  # Unix timestamp (float)
+end = chunk.end_timestamp()      # Unix timestamp (float)
+duration_ms = chunk.duration_ms() # Duration in milliseconds
+
+print(f"Chunk spans {duration_ms}ms")
+print(f"From {start} to {end}")
+```
+
+<Info>
+Timestamps are Unix timestamps in seconds with millisecond precision (as floats). Duration is returned in milliseconds as an integer.
+</Info>
+
+## Extracting function metrics
+
+ProfileChunk supports the same rich function metrics extraction as Profile:
+
+```python
+metrics = chunk.extract_functions_metrics(
+    min_depth=1,              # Ignore root frames
+    filter_system_frames=True, # Skip standard library
+    max_unique_functions=100,  # Top 100 slowest
+    filter_non_leaf_functions=True,  # Skip functions with no self-time
+    generate_stack_fingerprints=False # Don't generate stack fingerprints
+)
+
+for func in metrics:
+    print(f"{func.get_function()}: {func.get_sum_self_time_ns()}ns")
+```
+
+### Metrics extraction internals
+
+The extraction process (from `src/profile_chunk.rs:278-321`):
+
+1. **Build call trees**: Creates a call tree for each thread
+2. **Collect functions**: Traverses each tree to gather function data
+3. **Filter functions**: Removes low-sample-count and system frames if requested
+4. **Sort by self-time**: Orders functions by total self-execution time
+5. **Truncate**: Returns top N functions if `max_unique_functions` is specified
+
+```rust
+let call_trees: CallTreesStr = self.profile.call_trees(None)?;
+let mut functions: HashMap<u32, CallTreeFunction> = HashMap::new();
+
+for (tid, call_trees_for_thread) in &call_trees {
+    for call_tree in call_trees_for_thread {
+        call_tree.borrow_mut().collect_functions(
+            &mut functions,
+            tid,
+            0,
+            min_depth,
+            filter_system_frames,
+            filter_non_leaf_functions,
+            generate_stack_fingerprints,
+            None,
+        );
+    }
+}
+
+functions_list.sort_by(|a, b| b.sum_self_time_ns.cmp(&a.sum_self_time_ns));
+```
+
+## Platform-specific implementations
+
+### Android chunks
+
+Android chunks use the `AndroidChunk` type and have no version field in their JSON:
+
+```json
+{
+  "chunk_id": "...",
+  "profiler_id": "...",
+  "platform": "android",
+  ...
+}
+```
+
+### Sample chunks (iOS, Python, etc.)
+
+Other platforms use `SampleChunk` which includes a version field:
+
+```json
+{
+  "version": "2",
+  "chunk_id": "...",
+  "profiler_id": "...",
+  "platform": "cocoa",
+  ...
+}
+```
+
+The platform detection logic (from `src/profile_chunk.rs:25-40`):
+
+```rust
+let min_prof: MinimumProfile = serde_json::from_slice(profile)?;
+match min_prof.version {
+    None => {
+        let android: AndroidChunk = serde_json::from_slice(profile)?;
+        Ok(ProfileChunk { profile: Box::new(android) })
+    }
+    Some(_) => {
+        let sample: SampleChunk = serde_json::from_slice(profile)?;
+        Ok(ProfileChunk { profile: Box::new(sample) })
+    }
+}
+```
+
+## Use cases
+
+### Continuous profiling pipeline
+
+ProfileChunks are ideal for building continuous profiling systems:
+
+```python
+import vroomrs
+
+def process_chunk(chunk_data):
+    # Load the chunk
+    chunk = vroomrs.profile_chunk_from_json_str(
+        chunk_data,
+        platform="python"
+    )
+    
+    # Normalize platform-specific quirks
+    chunk.normalize()
+    
+    # Extract top functions
+    functions = chunk.extract_functions_metrics(
+        min_depth=1,
+        filter_system_frames=True,
+        max_unique_functions=50
+    )
+    
+    # Store chunk metadata for timeline reconstruction
+    metadata = {
+        'chunk_id': chunk.get_chunk_id(),
+        'profiler_id': chunk.get_profiler_id(),
+        'start': chunk.start_timestamp(),
+        'end': chunk.end_timestamp(),
+        'duration_ms': chunk.duration_ms(),
+    }
+    
+    return metadata, functions
+```
+
+### Aggregating chunks
+
+Multiple chunks from the same profiler can be aggregated:
+
+```python
+import vroomrs
+from collections import defaultdict
+
+def aggregate_profiler_session(chunk_datas):
+    all_functions = defaultdict(lambda: {
+        'total_time_ns': 0,
+        'sample_count': 0,
+        'chunks': []
+    })
+    
+    for chunk_data in chunk_datas:
+        chunk = vroomrs.profile_chunk_from_json_str(chunk_data)
+        chunk.normalize()
+        
+        metrics = chunk.extract_functions_metrics(
+            min_depth=1,
+            filter_system_frames=True
+        )
+        
+        for func in metrics:
+            key = func.get_function()
+            all_functions[key]['total_time_ns'] += func.get_sum_self_time_ns()
+            all_functions[key]['sample_count'] += func.get_sample_count()
+            all_functions[key]['chunks'].append(chunk.get_chunk_id())
+    
+    return all_functions
+```
+
+### Streaming compression
+
+Chunks can be compressed for efficient storage and transmission:
+
+```python
+import vroomrs
+
+# Load chunk
+chunk = vroomrs.profile_chunk_from_json_str(data)
+
+# Process it
+chunk.normalize()
+
+# Compress for storage
+compressed = chunk.compress()
+
+with open(f"chunk_{chunk.get_chunk_id()}.lz4", "wb") as f:
+    f.write(compressed)
+```
+
+## Differences from Profile
+
+Key implementation differences:
+
+| Aspect | ProfileChunk | Profile |
+|--------|--------------|----------|
+| **Thread IDs** | String-based (`CallTreesStr`) | Integer-based (`CallTreesU64`) |
+| **Duration method** | `duration_ms()` returns milliseconds | `duration_ns()` returns nanoseconds |
+| **Time representation** | `start_timestamp()` + `end_timestamp()` | `get_timestamp()` (end only) |
+| **Identifiers** | `chunk_id` + `profiler_id` | `profile_id` |
+| **Occurrences** | Not supported | Supported via `find_occurrences()` |
+| **Received time** | Float (`get_received()`) | Integer (`get_received()`) |
+
+<Warning>
+ProfileChunk does not support the `find_occurrences()` method. Performance issue detection is only available on the `Profile` class.
+</Warning>
+
+## Best practices
+
+1. **Always normalize**: Call `normalize()` immediately after loading to apply platform-specific corrections
+
+2. **Specify platform**: When you know the platform, always pass it to `profile_chunk_from_json_str()` for better performance
+
+3. **Use compression**: Store chunks compressed with LZ4 to save space
+
+4. **Track profiler IDs**: Keep track of `profiler_id` to group related chunks
+
+5. **Monitor chunk duration**: Use `duration_ms()` to ensure chunks are appropriately sized for your use case

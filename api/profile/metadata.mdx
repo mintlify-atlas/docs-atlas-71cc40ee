@@ -1,0 +1,246 @@
+---
+title: Profile metadata and properties
+description: Methods for accessing profile metadata, identifiers, and properties
+---
+
+The Profile class provides numerous getter methods to access metadata, identifiers, timestamps, and other properties.
+
+## Identifiers
+
+### get_profile_id()
+
+Returns the unique profile identifier.
+
+```python
+profile_id = profile.get_profile_id()
+```
+
+<ResponseField name="return" type="str">
+  The profile ID of the profile
+</ResponseField>
+
+### set_profile_id()
+
+Sets the profile ID.
+
+```python
+profile.set_profile_id("06ccc59502e64154a352e25cb59ccf08")
+```
+
+<ParamField path="profile_id" type="str" required>
+  The new profile ID to set
+</ParamField>
+
+<ResponseField name="return" type="None">
+  This method modifies the profile in-place
+</ResponseField>
+
+### get_organization_id()
+
+Returns the organization ID to which the profile belongs.
+
+```python
+org_id = profile.get_organization_id()
+```
+
+<ResponseField name="return" type="int">
+  The organization ID
+</ResponseField>
+
+### get_project_id()
+
+Returns the project ID to which the profile belongs.
+
+```python
+project_id = profile.get_project_id()
+```
+
+<ResponseField name="return" type="int">
+  The project ID
+</ResponseField>
+
+## Environment and platform
+
+### get_environment()
+
+Returns the environment associated with the profile.
+
+```python
+environment = profile.get_environment()
+```
+
+<ResponseField name="return" type="str | None">
+  The environment, or None if not available
+</ResponseField>
+
+### get_platform()
+
+Returns the profile's platform.
+
+```python
+platform = profile.get_platform()
+```
+
+<ResponseField name="return" type="str">
+  The profile's platform (e.g., "android", "cocoa", "python")
+</ResponseField>
+
+### get_release()
+
+Returns the release version of the application.
+
+```python
+release = profile.get_release()
+```
+
+<ResponseField name="return" type="str | None">
+  The release of the SDK used to collect this profile, or None if not available
+</ResponseField>
+
+## SDK information
+
+### sdk_name()
+
+Returns the name of the SDK used to collect the profile.
+
+```python
+sdk = profile.sdk_name()
+```
+
+<ResponseField name="return" type="str | None">
+  The name of the SDK (e.g., "sentry.python"), or None if not available
+</ResponseField>
+
+### sdk_version()
+
+Returns the version of the SDK used to collect the profile.
+
+```python
+version = profile.sdk_version()
+```
+
+<ResponseField name="return" type="str | None">
+  The version of the SDK (e.g., "1.12.0"), or None if not available
+</ResponseField>
+
+## Timestamps and duration
+
+### get_timestamp()
+
+Returns the timestamp of the profile.
+
+```python
+timestamp = profile.get_timestamp()
+```
+
+The timestamp is a Unix timestamp in seconds with millisecond precision.
+
+<ResponseField name="return" type="float">
+  The timestamp of the profile as a Unix timestamp in seconds
+</ResponseField>
+
+### get_received()
+
+Returns the received timestamp.
+
+```python
+received = profile.get_received()
+```
+
+<ResponseField name="return" type="int">
+  The received timestamp
+</ResponseField>
+
+### duration_ns()
+
+Returns the duration of the profile in nanoseconds.
+
+```python
+duration = profile.duration_ns()
+```
+
+<ResponseField name="return" type="int">
+  The duration of the profile in nanoseconds
+</ResponseField>
+
+## Transaction and metadata
+
+### get_transaction()
+
+Returns the transaction information associated with the profile.
+
+```python
+transaction = profile.get_transaction()
+```
+
+<ResponseField name="return" type="Transaction">
+  A Transaction object containing:
+  - `id`: Transaction unique identifier
+  - `name`: Transaction name
+  - `trace_id`: Trace ID
+  - `segment_id`: Segment ID
+  - `active_thread_id`: Active thread ID
+  - `duration_ns`: Optional duration in nanoseconds
+</ResponseField>
+
+**Example:**
+
+```python
+transaction = profile.get_transaction()
+print(f"Transaction: {transaction.name}")
+print(f"Trace ID: {transaction.trace_id}")
+print(f"Duration: {transaction.duration_ns}ns")
+```
+
+### get_metadata()
+
+Returns comprehensive metadata information associated with the profile.
+
+```python
+metadata = profile.get_metadata()
+```
+
+<ResponseField name="return" type="Metadata">
+  A Metadata object containing device characteristics, SDK information, transaction details, and other profile-specific data including:
+  - Device information (model, OS, architecture, manufacturer, locale)
+  - SDK details (name, version)
+  - Transaction data (ID, name, duration)
+  - Application version (version code and name)
+  - Android API level (if applicable)
+</ResponseField>
+
+**Example:**
+
+```python
+metadata = profile.get_metadata()
+print(f"Device: {metadata.device_manufacturer} {metadata.device_model}")
+print(f"OS: {metadata.device_os_name} {metadata.device_os_version}")
+print(f"Architecture: {metadata.architecture}")
+print(f"SDK: {metadata.sdk_name} {metadata.sdk_version}")
+```
+
+## Storage and retention
+
+### storage_path()
+
+Returns the storage path of the profile.
+
+```python
+path = profile.storage_path()
+```
+
+<ResponseField name="return" type="str">
+  The storage path of the profile
+</ResponseField>
+
+### get_retention_days()
+
+Returns the number of days the profile should be retained.
+
+```python
+retention = profile.get_retention_days()
+```
+
+<ResponseField name="return" type="int">
+  The retention days
+</ResponseField>

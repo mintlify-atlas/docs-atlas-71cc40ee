@@ -1,0 +1,424 @@
+---
+title: Performance issue detection
+description: Use find_occurrences() to automatically detect performance problems
+---
+
+The `find_occurrences()` method automatically analyzes profiles to detect various types of performance issues, from UI thread blocking to slow database operations. It returns structured data about each detected problem.
+
+## Basic usage
+
+```python
+import vroomrs
+
+profile = vroomrs.profile_from_json_str(profile_json, platform="cocoa")
+profile.normalize()
+
+# Detect performance issues
+occurrences = profile.find_occurrences()
+
+print(f"Found {len(occurrences.occurrences)} performance issues")
+
+for occ in occurrences.occurrences:
+    print(f"Issue: {occ.get_issue_title()}")
+    print(f"Function: {occ.get_subtitle()}")
+    print(f"Duration: {occ.get_duration_ns() / 1_000_000:.2f}ms")
+    print()
+```
+
+## What issues are detected?
+
+vroomrs detects platform-specific performance problems:
+
+### iOS/Cocoa issues
+
+<Tabs>
+  <Tab title="I/O operations">
+    - **File I/O on Main Thread**: Reading/writing files synchronously
+    - **Network I/O on Main Thread**: Synchronous HTTP requests
+    - Functions: `CFReadStreamRead`, `CFURLConnectionSendSynchronousRequest`, `NSData.initWithContentsOfURL`, etc.
+  </Tab>
+  
+  <Tab title="Data processing">
+    - **JSON Decoding on Main Thread**: Parsing JSON synchronously
+    - **Image Decoding on Main Thread**: Decoding images blocks UI
+    - **Regex on Main Thread**: Complex regular expressions
+    - **Compression/Decompression on Main Thread**: Data compression
+    - Functions: `NSJSONSerialization.JSONObjectWithStream`, `applejpeg_decode_image_all`, etc.
+  </Tab>
+  
+  <Tab title="Database operations">
+    - **CoreData operations on Main Thread**: Fetch, save, merge operations
+    - **SQL operations on Main Thread**: Synchronous database queries
+    - Functions: `NSManagedObjectContext.executeFetchRequest`, `NSManagedObjectContext.save`, etc.
+  </Tab>
+  
+  <Tab title="SwiftUI issues">
+    - **SwiftUI View Inflation is slow**: View body computation
+    - **SwiftUI View Layout is slow**: Layout calculation overhead
+    - **SwiftUI View Render is slow**: Rendering performance
+    - **SwiftUI View Update is slow**: State update overhead
+    - Functions: `AG::LayoutDescriptor::make_layout`, various SwiftUI internals
+  </Tab>
+  
+  <Tab title="ML operations">
+    - **Machine Learning model load on Main Thread**: Loading ML models
+    - **Machine Learning inference on Main Thread**: Running predictions
+    - Functions: `MLModel.modelWithContentsOfURL`, `MLNeuralNetworkEngine.predictionFromFeatures`
+  </Tab>
+  
+  <Tab title="Frame drops">
+    - **Frame Drop**: Main thread blocking causing dropped frames
+    - Detected when main thread is blocked for >16ms during rendering
+  </Tab>
+</Tabs>
+
+### Android issues
+
+<Tabs>
+  <Tab title="I/O operations">
+    - **File I/O on Main Thread**: Synchronous file operations
+    - Detected in various Java I/O classes
+  </Tab>
+  
+  <Tab title="Image processing">
+    - **Image Decoding on Main Thread**: BitmapFactory operations
+    - Functions in `android.graphics.BitmapFactory`
+  </Tab>
+  
+  <Tab title="Data processing">
+    - **JSON Decoding on Main Thread**: JSON parsing
+    - **Regex on Main Thread**: Pattern matching
+  </Tab>
+</Tabs>
+
+### Node.js issues
+
+<Tabs>
+  <Tab title="File system">
+    - **File I/O on Main Thread**: Synchronous fs operations
+    - Functions: `fs.readFileSync`, `fs.writeFileSync`, `fs.accessSync`, etc.
+  </Tab>
+  
+  <Tab title="Sentry-specific">
+    - **Adding Source Context is slow**: Source code fetching overhead
+    - Functions: `addSourceContext`, `addSourceContextToFrames`
+  </Tab>
+</Tabs>
+
+## Understanding Occurrence objects
+
+Each detected issue is represented by an `Occurrence` object with rich metadata:
+
+### Issue identification
+
+```python
+for occ in occurrences.occurrences:
+    # What kind of issue
+    title = occ.get_issue_title()       # e.g., "File I/O on Main Thread"
+    category = occ.get_category()       # e.g., "file_read"
+    issue_type = occ.get_type()         # Numeric type identifier
+    
+    # Where it occurred
+    subtitle = occ.get_subtitle()       # Function name
+    culprit = occ.get_culprit()        # Transaction name
+    
+    # Severity
+    level = occ.get_level()            # "info", "warning", "error"
+```
+
+### Timing and impact
+
+```python
+for occ in occurrences.occurrences:
+    # Duration of the problematic operation
+    duration_ns = occ.get_duration_ns()
+    duration_ms = duration_ns / 1_000_000
+    
+    # How many samples detected this
+    sample_count = occ.get_sample_count()
+    
+    # When it was detected
+    detection_time = occ.get_detection_time()  # RFC 3339 format
+```
+
+### Stack trace and evidence
+
+```python
+for occ in occurrences.occurrences:
+    # Get the event with stack trace
+    event = occ.get_event()
+    stack_frames = event.stacktrace.frames
+    
+    for frame in stack_frames:
+        print(f"  {frame.package}.{frame.function}")
+        if frame.file:
+            print(f"    at {frame.file}:{frame.line}")
+    
+    # Human-readable evidence
+    evidence = occ.get_evidence_display()
+    for e in evidence:
+        print(f"{e.get_name()}: {e.get_value()}")
+        if e.get_important():
+            print("  [!] Important")
+    
+    # Structured evidence data
+    evidence_data = occ.get_evidence_data()
+    print(f"Frame: {evidence_data.get_frame_name()}")
+    print(f"Package: {evidence_data.get_frame_package()}")
+    print(f"Duration: {evidence_data.get_frame_duration_ns() / 1_000_000:.2f}ms")
+```
+
+### Grouping and deduplication
+
+```python
+for occ in occurrences.occurrences:
+    # Unique identifiers for grouping similar issues
+    occurrence_id = occ.get_id()           # Unique to this occurrence
+    fingerprint = occ.get_fingerprint()     # For grouping similar issues
+    
+    # Project context
+    project_id = occ.get_project_id()
+    resource_id = occ.get_resource_id()     # Optional resource identifier
+```
+
+## Practical examples
+
+### Detect and report critical issues
+
+<Steps>
+  <Step title="Run detection">
+    ```python
+    profile = vroomrs.profile_from_json_str(json_data, platform="cocoa")
+    profile.normalize()
+    occurrences = profile.find_occurrences()
+    ```
+  </Step>
+  
+  <Step title="Filter critical issues">
+    ```python
+    # Focus on I/O and database operations
+    critical_categories = {
+        'file_read', 'file_write', 'http',
+        'core_data_read', 'core_data_write',
+        'json_decode', 'image_decode'
+    }
+    
+    critical = [
+        occ for occ in occurrences.occurrences
+        if occ.get_category() in critical_categories
+    ]
+    ```
+  </Step>
+  
+  <Step title="Sort by impact">
+    ```python
+    # Sort by duration (most impactful first)
+    critical.sort(key=lambda o: o.get_duration_ns(), reverse=True)
+    
+    for occ in critical[:10]:  # Top 10
+        print(f"❌ {occ.get_issue_title()}")
+        print(f"   Function: {occ.get_subtitle()}")
+        print(f"   Duration: {occ.get_duration_ns() / 1_000_000:.2f}ms")
+        print(f"   Samples: {occ.get_sample_count()}")
+        print()
+    ```
+  </Step>
+</Steps>
+
+### Filter out noise
+
+```python
+occurrences = profile.find_occurrences()
+
+# Remove NONE_TYPE issues (experimental/low-confidence detections)
+occurrences.filter_none_type_issues()
+
+print(f"Filtered to {len(occurrences.occurrences)} high-confidence issues")
+```
+
+<Note>
+  Issues with `type=NONE_TYPE` (0) are detected patterns that don't have an assigned issue type yet. Use `filter_none_type_issues()` to focus on well-defined issue types.
+</Note>
+
+### Export to JSON
+
+```python
+occurrences = profile.find_occurrences()
+
+# Export all occurrences
+json_str = occurrences.to_json_str()
+
+with open('occurrences.json', 'w') as f:
+    f.write(json_str)
+
+# Export individual occurrence
+if occurrences.occurrences:
+    first_occurrence = occurrences.occurrences[0]
+    json_str = first_occurrence.to_json_str()
+    print(json_str)
+```
+
+### Analyze by category
+
+```python
+from collections import defaultdict
+
+occurrences = profile.find_occurrences()
+
+# Group by category
+by_category = defaultdict(list)
+for occ in occurrences.occurrences:
+    by_category[occ.get_category()].append(occ)
+
+# Report by category
+for category, issues in sorted(by_category.items()):
+    total_time = sum(o.get_duration_ns() for o in issues)
+    print(f"\n{category}: {len(issues)} issues")
+    print(f"  Total time: {total_time / 1_000_000:.2f}ms")
+    
+    # Top issue in category
+    top = max(issues, key=lambda o: o.get_duration_ns())
+    print(f"  Worst: {top.get_subtitle()}")
+    print(f"    {top.get_duration_ns() / 1_000_000:.2f}ms")
+```
+
+### Detect frame drop causes
+
+```python
+profile = vroomrs.profile_from_json_str(ios_profile, platform="cocoa")
+occurrences = profile.find_occurrences()
+
+# Find frame drops
+frame_drops = [
+    occ for occ in occurrences.occurrences
+    if occ.get_category() == 'frame_drop'
+]
+
+if frame_drops:
+    print(f"⚠️  Found {len(frame_drops)} frame drops")
+    for drop in frame_drops:
+        print(f"\nBlocked by: {drop.get_subtitle()}")
+        print(f"Duration: {drop.get_duration_ns() / 1_000_000:.2f}ms")
+        
+        # Show what caused the frame drop
+        event = drop.get_event()
+        if event.stacktrace.frames:
+            culprit_frame = event.stacktrace.frames[-1]
+            print(f"In: {culprit_frame.function}")
+```
+
+### Create performance report
+
+```python
+profile = vroomrs.profile_from_json_str(profile_json, platform="cocoa")
+occurrences = profile.find_occurrences()
+occurrences.filter_none_type_issues()
+
+print("=" * 60)
+print("PERFORMANCE ANALYSIS REPORT")
+print("=" * 60)
+
+print(f"\nProfile: {profile.get_profile_id()}")
+print(f"Platform: {profile.get_platform()}")
+print(f"Duration: {profile.duration_ns() / 1_000_000:.2f}ms")
+
+print(f"\nIssues detected: {len(occurrences.occurrences)}")
+
+if not occurrences.occurrences:
+    print("✅ No performance issues detected!")
+else:
+    # Severity breakdown
+    by_type = {}
+    for occ in occurrences.occurrences:
+        title = occ.get_issue_title()
+        by_type[title] = by_type.get(title, 0) + 1
+    
+    print("\nBreakdown by issue type:")
+    for title, count in sorted(by_type.items(), key=lambda x: x[1], reverse=True):
+        print(f"  • {title}: {count}")
+    
+    # Top offenders
+    print("\nTop 5 performance bottlenecks:")
+    sorted_issues = sorted(
+        occurrences.occurrences,
+        key=lambda o: o.get_duration_ns(),
+        reverse=True
+    )
+    
+    for i, occ in enumerate(sorted_issues[:5], 1):
+        print(f"\n{i}. {occ.get_issue_title()}")
+        print(f"   Function: {occ.get_subtitle()}")
+        print(f"   Duration: {occ.get_duration_ns() / 1_000_000:.2f}ms")
+        print(f"   Samples: {occ.get_sample_count()}")
+        
+        evidence = occ.get_evidence_display()
+        for e in evidence:
+            if e.get_important():
+                print(f"   {e.get_name()}: {e.get_value()}")
+
+print("\n" + "=" * 60)
+```
+
+## Detection thresholds
+
+Different platforms and issue types have different detection thresholds:
+
+<Tabs>
+  <Tab title="iOS/Cocoa">
+    - **Minimum duration**: 16ms (frame time)
+    - **Minimum samples**: 4 samples
+    - Frame drops detected when main thread blocked >16ms
+  </Tab>
+  
+  <Tab title="Android">
+    - **Minimum duration**: Platform-dependent
+    - Samples calculated based on duration (10ms per sample)
+  </Tab>
+  
+  <Tab title="Node.js">
+    - **File I/O**: Detected on first occurrence
+    - **Source context**: Minimum 100ms duration
+  </Tab>
+</Tabs>
+
+<Warning>
+  Occurrences are only created for issues that:
+  1. Meet the minimum duration threshold
+  2. Appear in enough samples
+  3. Occur on the monitored thread (typically main/active thread)
+</Warning>
+
+## Understanding evidence data
+
+Each occurrence includes evidence in two formats:
+
+### Display evidence (human-readable)
+
+```python
+evidence_display = occ.get_evidence_display()
+for e in evidence_display:
+    print(f"{e.get_name()}: {e.get_value()}")
+    # Example output:
+    # Suspect function: readFileSync
+    # Package: node:fs
+    # Duration: 45.2ms (23.4% of the profile, found in 12 samples)
+```
+
+### Structured evidence (machine-readable)
+
+```python
+evidence_data = occ.get_evidence_data()
+
+print(f"Frame name: {evidence_data.get_frame_name()}")
+print(f"Frame package: {evidence_data.get_frame_package()}")
+print(f"Frame module: {evidence_data.get_frame_module()}")
+print(f"Frame duration: {evidence_data.get_frame_duration_ns()}ns")
+print(f"Profile duration: {evidence_data.get_profile_duration_ns()}ns")
+print(f"Transaction: {evidence_data.get_transaction_name()}")
+print(f"Sample count: {evidence_data.get_sample_count()}")
+```
+
+## Next steps
+
+- [Platform support](/guides/platform-support) - Learn which issues are detected per platform
+- [Extracting metrics](/guides/extracting-metrics) - Complement occurrence detection with metrics analysis
