@@ -74,7 +74,7 @@ This guide will walk you through the basics of using vroomrs to process profilin
     # Find performance issues
     occurrences = profile.find_occurrences()
 
-    for occurrence in occurrences.get_occurrences():
+    for occurrence in occurrences.occurrences:
         print(f"{occurrence.get_type()}: {occurrence.get_issue_title()}")
         print(f"  Culprit: {occurrence.get_culprit()}")
         print(f"  Duration: {occurrence.get_duration_ns() / 1_000_000}ms")
@@ -159,9 +159,9 @@ for i, func in enumerate(functions, 1):
 # Detect performance issues
 occurrences = profile.find_occurrences()
 
-if occurrences.get_occurrences():
-    print(f"\nFound {len(occurrences.get_occurrences())} performance issues:")
-    for occurrence in occurrences.get_occurrences():
+if occurrences.occurrences:
+    print(f"\nFound {len(occurrences.occurrences)} performance issues:")
+    for occurrence in occurrences.occurrences:
         print(f"  - {occurrence.get_type()}: {occurrence.get_issue_title()}")
 ```
 
