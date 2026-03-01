@@ -1,0 +1,106 @@
+{
+  "projectType": "sdk-library",
+  "projectName": "vroomrs",
+  "projectDescription": "High-performance profiling library written in Rust for processing and analyzing application profiles",
+  "theme": "aspen",
+  "primaryColor": "#6B46C1",
+  "lightColor": "#9F7AEA",
+  "darkColor": "#553C9A",
+  "navigation": {
+    "tabs": [
+      {
+        "tab": "Documentation",
+        "groups": [
+          {
+            "group": "Get Started",
+            "pages": ["introduction", "installation", "quickstart"]
+          },
+          {
+            "group": "Core Concepts",
+            "pages": [
+              "concepts/profiles",
+              "concepts/profile-chunks",
+              "concepts/normalization",
+              "concepts/compression"
+            ]
+          },
+          {
+            "group": "Guides",
+            "pages": [
+              "guides/working-with-profiles",
+              "guides/extracting-metrics",
+              "guides/performance-detection",
+              "guides/platform-support"
+            ]
+          }
+        ]
+      },
+      {
+        "tab": "API Reference",
+        "groups": [
+          {
+            "group": "Module Functions",
+            "pages": [
+              "api/profile-chunk-from-json-str",
+              "api/profile-from-json-str",
+              "api/decompress-profile-chunk",
+              "api/decompress-profile"
+            ]
+          },
+          {
+            "group": "Profile Class",
+            "pages": [
+              "api/profile/overview",
+              "api/profile/methods",
+              "api/profile/metadata"
+            ]
+          },
+          {
+            "group": "ProfileChunk Class",
+            "pages": [
+              "api/profile-chunk/overview",
+              "api/profile-chunk/methods",
+              "api/profile-chunk/call-trees"
+            ]
+          },
+          {
+            "group": "CallTreeFunction",
+            "pages": [
+              "api/call-tree-function"
+            ]
+          },
+          {
+            "group": "Occurrences",
+            "pages": [
+              "api/occurrences"
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "keyFeatures": [
+    "Parse and normalize profiling data from multiple platforms (Android, iOS, Python)",
+    "Extract function metrics and call tree analysis",
+    "Detect performance issues and occurrences automatically",
+    "LZ4 compression and decompression support",
+    "High-performance Rust implementation with Python bindings",
+    "Support for both Profile and ProfileChunk formats"
+  ],
+  "publicApiSurface": [
+    "profile_chunk_from_json_str(profile, platform=None)",
+    "profile_from_json_str(profile, platform=None)",
+    "decompress_profile_chunk(profile)",
+    "decompress_profile(profile)",
+    "Profile.normalize()",
+    "Profile.extract_functions_metrics()",
+    "Profile.find_occurrences()",
+    "Profile.compress()",
+    "ProfileChunk.normalize()",
+    "ProfileChunk.extract_functions_metrics()",
+    "ProfileChunk.extract_call_trees()",
+    "ProfileChunk.compress()",
+    "CallTreeFunction",
+    "Occurrence"
+  ]
+}
